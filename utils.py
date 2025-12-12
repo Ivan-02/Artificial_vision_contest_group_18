@@ -48,3 +48,134 @@ def unzip_and_delete(source_folder, output_folder):
         print("Nessun file .zip trovato nella cartella sorgente.")
     else:
         print("\nOperazione completata!")
+
+
+
+import os
+import shutil
+import pandas as pd
+import cv2
+from tqdm import tqdm
+
+
+def convert_mot_to_yolo(source_dir, output_dir, target_class_id=0):
+    """
+    Converte un dataset da formato MOT a formato YOLO.
+
+    Args:
+        source_dir (str): La root directory contenente le cartelle dei video.
+        output_dir (str): La directory dove salvare il dataset YOLO.
+        target_class_id (int): L'ID della classe da assegnare a tutti gli oggetti (default 0).
+    """
+
+    # 1. Creazione cartelle di output
+    images_train_dir = os.path.join(output_dir, 'images', 'train')
+    labels_train_dir = os.path.join(output_dir, 'labels', 'train')
+
+    os.makedirs(images_train_dir, exist_ok=True)
+    os.makedirs(labels_train_dir, exist_ok=True)
+
+    # Trova tutte le cartelle dei video
+    video_folders = [f for f in os.listdir(source_dir) if os.path.isdir(os.path.join(source_dir, f))]
+
+    print(f"Trovati {len(video_folders)} video da processare.")
+
+    for video_name in tqdm(video_folders, desc="Processando Video"):
+        video_path = os.path.join(source_dir, video_name)
+
+        # Percorsi specifici MOT
+        det_path = os.path.join(video_path, 'det', 'det.txt')
+        img_dir = os.path.join(video_path, 'img1')
+
+        # Controllo esistenza file fondamentali
+        if not os.path.exists(det_path) or not os.path.exists(img_dir):
+            # print(f"Saltato {video_name}: cartella 'det' o 'img1' mancante.")
+            continue
+
+        # 2. Leggi il file det.txt
+        # Colonne standard MOT: frame, id, x, y, w, h, conf, class, vis, unused
+        try:
+            df = pd.read_csv(det_path, header=None)
+            df.columns = ['frame_id', 'obj_id', 'x_topleft', 'y_topleft', 'width', 'height', 'conf', 'class_id', 'vis',
+                          'unused']
+        except Exception as e:
+            print(f"Errore lettura CSV per {video_name}: {e}")
+            continue
+
+        # 3. Raggruppa per Frame ID
+        grouped = df.groupby('frame_id')
+
+        for frame_id, group in grouped:
+            # Costruisci il nome del file immagine sorgente (es. 000001.jpg)
+            file_img_name = f"{int(frame_id):06d}.jpg"
+            path_img_src = os.path.join(img_dir, file_img_name)
+
+            # Fallback se le immagini sono png
+            if not os.path.exists(path_img_src):
+                file_img_name = f"{int(frame_id):06d}.png"
+                path_img_src = os.path.join(img_dir, file_img_name)
+
+            if not os.path.exists(path_img_src):
+                continue  # Immagine non trovata, salto
+
+            # 4. Ottieni dimensioni immagine (necessario per normalizzare)
+            img = cv2.imread(path_img_src)
+            if img is None:
+                continue
+            img_h, img_w = img.shape[:2]
+
+            # 5. Prepara il file label YOLO
+            # Nome univoco: NomeVideo_frame_xxxx
+            unique_name = f"{video_name}_frame_{int(frame_id):06d}"
+
+            yolo_labels = []
+
+            for _, row in group.iterrows():
+                # Calcolo centro assoluto e normalizzazione
+                x_center_abs = row['x_topleft'] + (row['width'] / 2)
+                y_center_abs = row['y_topleft'] + (row['height'] / 2)
+
+                x_center_norm = x_center_abs / img_w
+                y_center_norm = y_center_abs / img_h
+                width_norm = row['width'] / img_w
+                height_norm = row['height'] / img_h
+
+                # Clipping (0-1)
+                x_center_norm = min(max(x_center_norm, 0), 1)
+                y_center_norm = min(max(y_center_norm, 0), 1)
+                width_norm = min(max(width_norm, 0), 1)
+                height_norm = min(max(height_norm, 0), 1)
+
+                # Scrittura riga YOLO: class x y w h
+                yolo_line = f"{target_class_id} {x_center_norm:.6f} {y_center_norm:.6f} {width_norm:.6f} {height_norm:.6f}"
+                yolo_labels.append(yolo_line)
+
+            # 6. Salvataggio Label e Collegamento Immagine
+            if yolo_labels:
+                # A. Salva il file .txt
+                label_path_dest = os.path.join(labels_train_dir, unique_name + '.txt')
+                with open(label_path_dest, 'w') as f:
+                    f.write('\n'.join(yolo_labels))
+
+                # B. Crea SYMLINK per l'immagine (o copia se fallisce)
+                img_ext = os.path.splitext(file_img_name)[1]
+                img_path_dest = os.path.join(images_train_dir, unique_name + img_ext)
+
+                # Ottieni percorsi assoluti (NECESSARIO per i symlink)
+                src_abs = os.path.abspath(path_img_src)
+                dst_abs = os.path.abspath(img_path_dest)
+
+                try:
+                    # Se il link o il file esiste già, lo rimuoviamo per ricrearlo pulito
+                    if os.path.exists(dst_abs) or os.path.islink(dst_abs):
+                        os.remove(dst_abs)
+
+                    # Tenta di creare il collegamento simbolico
+                    os.symlink(src_abs, dst_abs)
+
+                except OSError:
+                    # Se l'OS non permette i symlink (es. Windows senza permessi Admin), facciamo fallback sulla copia
+                    shutil.copy(src_abs, dst_abs)
+
+    print("\nConversione completata!")
+    print(f"Dataset YOLO pronto in: {output_dir}")
