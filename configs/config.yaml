@@ -17,6 +17,7 @@ training:
 val:
   split: "test"
   imgsz: 1280
+  classes: [1,2,3]
   batch_size: 8
   conf_threshold: 0.001
   iou_threshold: 0.6

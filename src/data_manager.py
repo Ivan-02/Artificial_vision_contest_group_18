@@ -4,6 +4,7 @@ import shutil
 import pandas as pd
 import cv2
 import yaml
+import configparser
 from tqdm import tqdm
 
 
@@ -16,14 +17,12 @@ class DataManager:
 
     def prepare_dataset(self):
         """
-        Pipeline principale:
-        1. Estrae i zip se presenti.
-        2. Converte le annotazioni da MOT a YOLO.
-        3. Genera il file dataset.yaml per il training.
+        Pipeline: Unzip -> Converti (filtrando palla e assegnando ID corretti) -> Crea YAML
         """
-
+        # 1. Estrazione
         self._unzip_and_delete(self.raw_data_path, self.raw_data_path)
 
+        # 2. Conversione
         subsets = ['train', 'test']
         found_any = False
 
@@ -32,18 +31,18 @@ class DataManager:
             if os.path.exists(subset_path):
                 print(f"Trovato subset: {subset}. Inizio conversione...")
                 found_any = True
+                # NOTA: Non passo più target_class_id perché lo decidiamo dinamicamente dentro
                 self._convert_mot_to_yolo(
                     source_dir=subset_path,
                     output_dir=self.yolo_dataset_path,
-                    target_class_id=0,
                     sub_folder=subset
                 )
 
         if not found_any:
-            print("Nessuna sottocartella (train/test) trovata. Tento conversione nella root...")
+            print("Nessuna sottocartella standard trovata. Tento conversione nella root...")
             self._convert_mot_to_yolo(self.raw_data_path, self.yolo_dataset_path, sub_folder='train')
 
-        # 3. Creazione file YAML per YOLO
+        # 3. Creazione file YAML
         self._create_yolo_yaml()
         print("--- Preparazione Dataset Completata ---\n")
 
@@ -51,197 +50,180 @@ class DataManager:
         yaml_path = os.path.join(self.yolo_dataset_path, 'dataset.yaml')
         abs_path = os.path.abspath(self.yolo_dataset_path)
 
+        # DEFINIAMO LE CLASSI COME LE VUOLE IL MODELLO (ID 0..3)
+        # Anche se noi non scriveremo mai '0' nei file txt, il modello ha 4 output.
         data = {
             'path': abs_path,
             'train': 'images/train',
             'val': 'images/train',
             'test': 'images/test',
-            'nc': 1,
-            'names': {0: 'player'}
+            'nc': 4,
+            'names': {
+                0: 'ball',
+                1: 'goalkeeper',  # Nei txt sarà classe 1
+                2: 'player',  # Nei txt sarà classe 2
+                3: 'referee'  # Nei txt sarà classe 3
+            }
         }
 
         if not os.path.exists(os.path.join(abs_path, 'images', 'test')):
-            del data['test']
+            if 'test' in data: del data['test']
 
-        # Se esiste validation separata, aggiorniamo
         if os.path.exists(os.path.join(abs_path, 'images', 'valid')):
             data['val'] = 'images/valid'
+        elif os.path.exists(os.path.join(abs_path, 'images', 'test')):
+            data['val'] = 'images/test'
 
         with open(yaml_path, 'w') as f:
             yaml.dump(data, f, sort_keys=False)
-
         print(f"File di configurazione YOLO creato: {yaml_path}")
 
     @staticmethod
     def _unzip_and_delete(source_folder, output_folder):
-        """
-        Estrae tutti i file .zip dalla source_folder verso la output_folder
-        e poi elimina i file .zip originali.
-        """
-
-        # 1. Controlla se la cartella sorgente esiste
         if not os.path.exists(source_folder):
-            print(f"Errore: La cartella sorgente '{source_folder}' non esiste.")
             return
-
-        # 2. Crea la cartella di destinazione se non esiste
         if not os.path.exists(output_folder):
-            try:
-                os.makedirs(output_folder)
-                print(f"Creata cartella di destinazione: {output_folder}")
-            except OSError as e:
-                print(f"Errore nella creazione della cartella {output_folder}: {e}")
-                return
+            os.makedirs(output_folder, exist_ok=True)
 
-        # 3. Itera sui file
-        files_found = False
         for item in os.listdir(source_folder):
             if item.endswith(".zip"):
-                files_found = True
                 zip_path = os.path.join(source_folder, item)
-
-                print(f"Sto estraendo: {item} -> in {output_folder}")
-
+                print(f"Estraendo: {item}...")
                 try:
                     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                        # Qui specifichiamo la cartella di output
                         zip_ref.extractall(output_folder)
-
-                    # Se l'estrazione va a buon fine, elimina lo zip originale
-                    print(f"Estrazione completata. Elimino {item}")
                     os.remove(zip_path)
-
-                except zipfile.BadZipFile:
-                    print(f"ERRORE: Il file {item} è corrotto.")
                 except Exception as e:
-                    print(f"Errore generico con {item}: {e}")
-
-        if not files_found:
-            print("Nessun file .zip trovato nella cartella sorgente.")
-        else:
-            print("\nOperazione completata!")
+                    print(f"Errore zip {item}: {e}")
 
     @staticmethod
-    def _convert_mot_to_yolo(source_dir, output_dir, target_class_id=0, sub_folder='train'):
-        """
-        Converte un dataset da formato MOT a formato YOLO.
-        Salta l'elaborazione se i file di destinazione esistono già.
-        """
+    def _parse_gameinfo(ini_path):
+        """ Legge gameinfo.ini per mappare ID locale -> etichetta (es. "player team left") """
+        id_map = {}
+        if not os.path.exists(ini_path):
+            return id_map
+        try:
+            config = configparser.ConfigParser()
+            config.read(ini_path)
+            if 'Sequence' in config:
+                for key, val in config['Sequence'].items():
+                    if key.startswith('trackletid_'):
+                        try:
+                            # key format: trackletid_X
+                            obj_id = int(key.split('_')[1])
+                            # val format: label; info
+                            label_desc = val.split(';')[0].lower().strip()
+                            id_map[obj_id] = label_desc
+                        except:
+                            continue
+        except Exception:
+            pass
+        return id_map
 
-        # 1. Creazione cartelle di output
-        images_train_dir = os.path.join(output_dir, 'images', sub_folder)
-        labels_train_dir = os.path.join(output_dir, 'labels', sub_folder)
-        os.makedirs(images_train_dir, exist_ok=True)
-        os.makedirs(labels_train_dir, exist_ok=True)
+    def _convert_mot_to_yolo(self, source_dir, output_dir, sub_folder='train'):
+        images_out = os.path.join(output_dir, 'images', sub_folder)
+        labels_out = os.path.join(output_dir, 'labels', sub_folder)
+        os.makedirs(images_out, exist_ok=True)
+        os.makedirs(labels_out, exist_ok=True)
 
-        # Trova tutte le cartelle dei video
         video_folders = [f for f in os.listdir(source_dir) if os.path.isdir(os.path.join(source_dir, f))]
-
-        print(f"Trovati {len(video_folders)} video da processare.")
 
         for video_name in tqdm(video_folders, desc=f"Processando {sub_folder}"):
             video_path = os.path.join(source_dir, video_name)
 
-            # Percorsi specifici MOT
-            det_path = os.path.join(video_path, 'det', 'det.txt')
+            # 1. Recupera mappatura ID -> Label (es. 1->gk, 20->ball)
+            ini_path = os.path.join(video_path, 'gameinfo.ini')
+            id_to_label = self._parse_gameinfo(ini_path)
+
+            # 2. Usa GT.txt (Ground Truth)
+            gt_path = os.path.join(video_path, 'gt', 'gt.txt')
             img_dir = os.path.join(video_path, 'img1')
 
-            # Controllo esistenza file fondamentali
-            if not os.path.exists(det_path) or not os.path.exists(img_dir):
+            if not os.path.exists(gt_path) or not os.path.exists(img_dir):
                 continue
 
-            # 2. Leggi il file det.txt
             try:
-                df = pd.read_csv(det_path, header=None)
-                df.columns = ['frame_id', 'obj_id', 'x_topleft', 'y_topleft', 'width', 'height', 'conf', 'class_id', 'vis',
-                              'unused']
-            except Exception as e:
-                print(f"Errore lettura CSV per {video_name}: {e}")
+                df = pd.read_csv(gt_path, header=None)
+                # Colonne: frame, id, x, y, w, h, ...
+                df.columns = ['frame_id', 'obj_id', 'x', 'y', 'w', 'h', 'conf', 'cls', 'vis', 'u']
+            except:
                 continue
 
-            # 3. Raggruppa per Frame ID
             grouped = df.groupby('frame_id')
 
             for frame_id, group in grouped:
-                # Costruisci il nome univoco SUBITO, per controllare se esiste
                 unique_name = f"{video_name}_frame_{int(frame_id):06d}"
-                label_path_dest = os.path.join(labels_train_dir, unique_name + '.txt')
+                label_file = os.path.join(labels_out, unique_name + '.txt')
 
-                # --- CONTROLLO ESISTENZA ---
-                # Se il file label esiste già, saltiamo tutto il blocco pesante (lettura img, calcoli, scrittura)
-                if os.path.exists(label_path_dest):
+                # Salta se esiste già
+                if os.path.exists(label_file):
                     continue
-                # ---------------------------
 
-                # Costruisci il nome del file immagine sorgente (es. 000001.jpg)
-                file_img_name = f"{int(frame_id):06d}.jpg"
-                path_img_src = os.path.join(img_dir, file_img_name)
-
-                # Fallback se le immagini sono png
-                if not os.path.exists(path_img_src):
-                    file_img_name = f"{int(frame_id):06d}.png"
-                    path_img_src = os.path.join(img_dir, file_img_name)
-
-                if not os.path.exists(path_img_src):
-                    continue  # Immagine non trovata, salto
-
-                # 4. Ottieni dimensioni immagine (necessario per normalizzare)
-                # cv2.imread è lento, quindi lo facciamo solo se non abbiamo saltato sopra
-                img = cv2.imread(path_img_src)
-                if img is None:
+                # Gestione immagine (jpg/png)
+                img_name_base = f"{int(frame_id):06d}"
+                src_img = os.path.join(img_dir, img_name_base + ".jpg")
+                if not os.path.exists(src_img):
+                    src_img = os.path.join(img_dir, img_name_base + ".png")
+                if not os.path.exists(src_img):
                     continue
-                img_h, img_w = img.shape[:2]
 
-                # 5. Prepara il file label YOLO
-                yolo_labels = []
+                # Leggi dimensioni per normalizzare
+                img = cv2.imread(src_img)
+                if img is None: continue
+                h_img, w_img = img.shape[:2]
 
+                yolo_lines = []
                 for _, row in group.iterrows():
-                    # Calcolo centro assoluto e normalizzazione
-                    x_center_abs = row['x_topleft'] + (row['width'] / 2)
-                    y_center_abs = row['y_topleft'] + (row['height'] / 2)
+                    obj_id = int(row['obj_id'])
 
-                    x_center_norm = x_center_abs / img_w
-                    y_center_norm = y_center_abs / img_h
-                    width_norm = row['width'] / img_w
-                    height_norm = row['height'] / img_h
+                    # Recupera l'etichetta testuale (es. "ball", "goalkeeper")
+                    label_str = id_to_label.get(obj_id, "unknown")
 
-                    # Clipping (0-1)
-                    x_center_norm = min(max(x_center_norm, 0), 1)
-                    y_center_norm = min(max(y_center_norm, 0), 1)
-                    width_norm = min(max(width_norm, 0), 1)
-                    height_norm = min(max(height_norm, 0), 1)
+                    # --- LOGICA DI FILTRO E ASSEGNAZIONE ID ---
+                    final_class_id = -1
 
-                    # Scrittura riga YOLO: class x y w h
-                    yolo_line = f"{target_class_id} {x_center_norm:.6f} {y_center_norm:.6f} {width_norm:.6f} {height_norm:.6f}"
-                    yolo_labels.append(yolo_line)
+                    if "ball" in label_str:
+                        final_class_id = 0
+                    elif "goalkeeper" in label_str:
+                        final_class_id = 1
+                    elif "player" in label_str:
+                        final_class_id = 2
+                    elif "referee" in label_str:
+                        final_class_id = 3
 
-                # 6. Salvataggio Label e Collegamento Immagine
-                if yolo_labels:
-                    # A. Salva il file .txt
-                    with open(label_path_dest, 'w') as f:
-                        f.write('\n'.join(yolo_labels))
+                    # Se non abbiamo assegnato un ID valido (es. unknown o altro), saltiamo
+                    if final_class_id == -1:
+                        continue
 
-                    # B. Crea SYMLINK per l'immagine (o copia se fallisce)
-                    img_ext = os.path.splitext(file_img_name)[1]
-                    img_path_dest = os.path.join(images_train_dir, unique_name + img_ext)
+                    # Calcoli YOLO
+                    x_c = (row['x'] + row['w'] / 2) / w_img
+                    y_c = (row['y'] + row['h'] / 2) / h_img
+                    w_n = row['w'] / w_img
+                    h_n = row['h'] / h_img
 
-                    # Ottieni percorsi assoluti (NECESSARIO per i symlink)
-                    src_abs = os.path.abspath(path_img_src)
-                    dst_abs = os.path.abspath(img_path_dest)
+                    # Clipping 0-1
+                    x_c = max(0, min(1, x_c))
+                    y_c = max(0, min(1, y_c))
+                    w_n = max(0, min(1, w_n))
+                    h_n = max(0, min(1, h_n))
 
-                    # Rimuovi eventuale link rotto o file esistente per ricrearlo pulito (solo se siamo arrivati qui)
-                    if os.path.exists(dst_abs) or os.path.islink(dst_abs):
+                    yolo_lines.append(f"{final_class_id} {x_c:.6f} {y_c:.6f} {w_n:.6f} {h_n:.6f}")
+
+                # Scrivi file solo se ci sono oggetti validi
+                if yolo_lines:
+                    with open(label_file, 'w') as f:
+                        f.write('\n'.join(yolo_lines))
+
+                    # Link immagine
+                    ext = os.path.splitext(src_img)[1]
+                    dst_img = os.path.join(images_out, unique_name + ext)
+
+                    if os.path.exists(dst_img) or os.path.islink(dst_img):
                         try:
-                            os.remove(dst_abs)
-                        except OSError:
+                            os.remove(dst_img)
+                        except:
                             pass
-
                     try:
-                        # Tenta di creare il collegamento simbolico
-                        os.symlink(src_abs, dst_abs)
-                    except OSError:
-                        # Se l'OS non permette i symlink (es. Windows senza permessi Admin), facciamo fallback sulla copia
-                        shutil.copy(src_abs, dst_abs)
-
-        print("\nConversione completata!")
-        print(f"Dataset YOLO pronto in: {output_dir}")
+                        os.symlink(os.path.abspath(src_img), os.path.abspath(dst_img))
+                    except:
+                        shutil.copy(os.path.abspath(src_img), os.path.abspath(dst_img))

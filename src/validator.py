@@ -62,6 +62,8 @@ class Validator:
                         results = self.model.val(
                             data=self.dataset_yaml,
                             split=self.cfg['val']['split'],
+                            classes = self.cfg['val']['classes'],
+                            single_cls = True,
                             imgsz=self.cfg['val']['imgsz'],
                             batch=self.cfg['val']['batch_size'],
                             project=self.cfg['paths']['output_val'],
