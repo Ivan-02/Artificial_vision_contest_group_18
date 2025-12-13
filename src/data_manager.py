@@ -72,8 +72,8 @@ class DataManager:
 
         print(f"File di configurazione YOLO creato: {yaml_path}")
 
-
-    def _unzip_and_delete(self, source_folder, output_folder):
+    @staticmethod
+    def _unzip_and_delete(source_folder, output_folder):
         """
         Estrae tutti i file .zip dalla source_folder verso la output_folder
         e poi elimina i file .zip originali.
@@ -121,8 +121,8 @@ class DataManager:
         else:
             print("\nOperazione completata!")
 
-
-    def _convert_mot_to_yolo(self, source_dir, output_dir, target_class_id=0, sub_folder='train'):
+    @staticmethod
+    def _convert_mot_to_yolo(source_dir, output_dir, target_class_id=0, sub_folder='train'):
         """
         Converte un dataset da formato MOT a formato YOLO.
         Salta l'elaborazione se i file di destinazione esistono già.
