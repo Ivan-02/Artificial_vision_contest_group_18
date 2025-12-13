@@ -1,0 +1,14 @@
+
+project_name: "SoccerNet_YOLO11_MEDIUM"
+
+paths:
+  raw_data: "./dataset/raw_data"
+  yolo_dataset: "./dataset/yolo"
+  output_submission: "./output/submissions"
+
+training:
+  model_size: "yolo11m.pt"
+  epochs: 50
+  imgsz: 1280
+  batch_size: 8
+  device: 0

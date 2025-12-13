@@ -3,19 +3,73 @@ import zipfile
 import shutil
 import pandas as pd
 import cv2
+import yaml
 from tqdm import tqdm
 
 
 class DataManager:
 
-    def __init__(self):
-        pass
+    def __init__(self, config):
+        self.cfg = config
+        self.raw_data_path = self.cfg['paths']['raw_data']
+        self.yolo_dataset_path = self.cfg['paths']['yolo_dataset']
 
     def prepare_dataset(self):
-        pass
+        """
+        Pipeline principale:
+        1. Estrae i zip se presenti.
+        2. Converte le annotazioni da MOT a YOLO.
+        3. Genera il file dataset.yaml per il training.
+        """
 
-    def _create_tolo_yaml(self):
-        pass
+        self._unzip_and_delete(self.raw_data_path, self.raw_data_path)
+
+        subsets = ['train', 'test']
+        found_any = False
+
+        for subset in subsets:
+            subset_path = os.path.join(self.raw_data_path, subset)
+            if os.path.exists(subset_path):
+                print(f"Trovato subset: {subset}. Inizio conversione...")
+                found_any = True
+                self._convert_mot_to_yolo(
+                    source_dir=subset_path,
+                    output_dir=self.yolo_dataset_path,
+                    target_class_id=0,
+                    sub_folder=subset
+                )
+
+        if not found_any:
+            print("Nessuna sottocartella (train/test) trovata. Tento conversione nella root...")
+            self._convert_mot_to_yolo(self.raw_data_path, self.yolo_dataset_path, sub_folder='train')
+
+        # 3. Creazione file YAML per YOLO
+        self._create_yolo_yaml()
+        print("--- Preparazione Dataset Completata ---\n")
+
+    def _create_yolo_yaml(self):
+        yaml_path = os.path.join(self.yolo_dataset_path, 'dataset.yaml')
+        abs_path = os.path.abspath(self.yolo_dataset_path)
+
+        data = {
+            'path': abs_path,
+            'train': 'images/train',
+            'val': 'images/train',
+            'test': 'images/test'
+        }
+
+        if not os.path.exists(os.path.join(abs_path, 'images', 'test')):
+            del data['test']
+
+        # Se esiste validation separata, aggiorniamo
+        if os.path.exists(os.path.join(abs_path, 'images', 'valid')):
+            data['val'] = 'images/valid'
+
+        with open(yaml_path, 'w') as f:
+            yaml.dump(data, f, sort_keys=False)
+
+        print(f"File di configurazione YOLO creato: {yaml_path}")
+
 
     def _unzip_and_delete(self, source_folder, output_folder):
         """
@@ -65,21 +119,16 @@ class DataManager:
         else:
             print("\nOperazione completata!")
 
+
     def _convert_mot_to_yolo(self, source_dir, output_dir, target_class_id=0, sub_folder='train'):
         """
         Converte un dataset da formato MOT a formato YOLO.
-
-        Args:
-            source_dir (str): La root directory contenente le cartelle dei video.
-            output_dir (str): La directory dove salvare il dataset YOLO.
-            target_class_id (int): L'ID della classe da assegnare a tutti gli oggetti (default 0).
-            sub_folder (str): La cartella di destinazione
+        Salta l'elaborazione se i file di destinazione esistono già.
         """
 
         # 1. Creazione cartelle di output
         images_train_dir = os.path.join(output_dir, 'images', sub_folder)
         labels_train_dir = os.path.join(output_dir, 'labels', sub_folder)
-
         os.makedirs(images_train_dir, exist_ok=True)
         os.makedirs(labels_train_dir, exist_ok=True)
 
@@ -88,7 +137,7 @@ class DataManager:
 
         print(f"Trovati {len(video_folders)} video da processare.")
 
-        for video_name in tqdm(video_folders, desc="Processando Video"):
+        for video_name in tqdm(video_folders, desc=f"Processando {sub_folder}"):
             video_path = os.path.join(source_dir, video_name)
 
             # Percorsi specifici MOT
@@ -97,11 +146,9 @@ class DataManager:
 
             # Controllo esistenza file fondamentali
             if not os.path.exists(det_path) or not os.path.exists(img_dir):
-                # print(f"Saltato {video_name}: cartella 'det' o 'img1' mancante.")
                 continue
 
             # 2. Leggi il file det.txt
-            # Colonne standard MOT: frame, id, x, y, w, h, conf, class, vis, unused
             try:
                 df = pd.read_csv(det_path, header=None)
                 df.columns = ['frame_id', 'obj_id', 'x_topleft', 'y_topleft', 'width', 'height', 'conf', 'class_id', 'vis',
@@ -114,6 +161,16 @@ class DataManager:
             grouped = df.groupby('frame_id')
 
             for frame_id, group in grouped:
+                # Costruisci il nome univoco SUBITO, per controllare se esiste
+                unique_name = f"{video_name}_frame_{int(frame_id):06d}"
+                label_path_dest = os.path.join(labels_train_dir, unique_name + '.txt')
+
+                # --- CONTROLLO ESISTENZA ---
+                # Se il file label esiste già, saltiamo tutto il blocco pesante (lettura img, calcoli, scrittura)
+                if os.path.exists(label_path_dest):
+                    continue
+                # ---------------------------
+
                 # Costruisci il nome del file immagine sorgente (es. 000001.jpg)
                 file_img_name = f"{int(frame_id):06d}.jpg"
                 path_img_src = os.path.join(img_dir, file_img_name)
@@ -127,15 +184,13 @@ class DataManager:
                     continue  # Immagine non trovata, salto
 
                 # 4. Ottieni dimensioni immagine (necessario per normalizzare)
+                # cv2.imread è lento, quindi lo facciamo solo se non abbiamo saltato sopra
                 img = cv2.imread(path_img_src)
                 if img is None:
                     continue
                 img_h, img_w = img.shape[:2]
 
                 # 5. Prepara il file label YOLO
-                # Nome univoco: NomeVideo_frame_xxxx
-                unique_name = f"{video_name}_frame_{int(frame_id):06d}"
-
                 yolo_labels = []
 
                 for _, row in group.iterrows():
@@ -161,7 +216,6 @@ class DataManager:
                 # 6. Salvataggio Label e Collegamento Immagine
                 if yolo_labels:
                     # A. Salva il file .txt
-                    label_path_dest = os.path.join(labels_train_dir, unique_name + '.txt')
                     with open(label_path_dest, 'w') as f:
                         f.write('\n'.join(yolo_labels))
 
@@ -173,14 +227,16 @@ class DataManager:
                     src_abs = os.path.abspath(path_img_src)
                     dst_abs = os.path.abspath(img_path_dest)
 
-                    try:
-                        # Se il link o il file esiste già, lo rimuoviamo per ricrearlo pulito
-                        if os.path.exists(dst_abs) or os.path.islink(dst_abs):
+                    # Rimuovi eventuale link rotto o file esistente per ricrearlo pulito (solo se siamo arrivati qui)
+                    if os.path.exists(dst_abs) or os.path.islink(dst_abs):
+                        try:
                             os.remove(dst_abs)
+                        except OSError:
+                            pass
 
+                    try:
                         # Tenta di creare il collegamento simbolico
                         os.symlink(src_abs, dst_abs)
-
                     except OSError:
                         # Se l'OS non permette i symlink (es. Windows senza permessi Admin), facciamo fallback sulla copia
                         shutil.copy(src_abs, dst_abs)
