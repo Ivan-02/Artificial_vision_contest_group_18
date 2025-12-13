@@ -1,10 +1,11 @@
-
 project_name: "SoccerNet_YOLO11_MEDIUM"
 
 paths:
   raw_data: "./dataset/raw_data"
   yolo_dataset: "./dataset/yolo"
+  model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
   output_submission: "./output/submissions"
+  output_val: "./output/validation"
 
 training:
   model_size: "yolo11m.pt"
@@ -12,3 +13,11 @@ training:
   imgsz: 1280
   batch_size: 8
   device: 0
+
+val:
+  split: "test"
+  imgsz: 1280
+  batch_size: 8
+  conf_threshold: 0.001
+  iou_threshold: 0.6
+

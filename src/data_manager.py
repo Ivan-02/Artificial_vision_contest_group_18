@@ -55,7 +55,9 @@ class DataManager:
             'path': abs_path,
             'train': 'images/train',
             'val': 'images/train',
-            'test': 'images/test'
+            'test': 'images/test',
+            'nc': 1,
+            'names': {0: 'player'}
         }
 
         if not os.path.exists(os.path.join(abs_path, 'images', 'test')):
