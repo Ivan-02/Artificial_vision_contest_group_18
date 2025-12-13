@@ -1,5 +1,9 @@
 import os
 import zipfile
+import shutil
+import pandas as pd
+import cv2
+from tqdm import tqdm
 
 def unzip_and_delete(source_folder, output_folder):
     """
@@ -49,16 +53,7 @@ def unzip_and_delete(source_folder, output_folder):
     else:
         print("\nOperazione completata!")
 
-
-
-import os
-import shutil
-import pandas as pd
-import cv2
-from tqdm import tqdm
-
-
-def convert_mot_to_yolo(source_dir, output_dir, target_class_id=0):
+def convert_mot_to_yolo(source_dir, output_dir, target_class_id=0, sub_folder='train'):
     """
     Converte un dataset da formato MOT a formato YOLO.
 
@@ -66,11 +61,12 @@ def convert_mot_to_yolo(source_dir, output_dir, target_class_id=0):
         source_dir (str): La root directory contenente le cartelle dei video.
         output_dir (str): La directory dove salvare il dataset YOLO.
         target_class_id (int): L'ID della classe da assegnare a tutti gli oggetti (default 0).
+        sub_folder (str): La cartella di destinazione
     """
 
     # 1. Creazione cartelle di output
-    images_train_dir = os.path.join(output_dir, 'images', 'train')
-    labels_train_dir = os.path.join(output_dir, 'labels', 'train')
+    images_train_dir = os.path.join(output_dir, 'images', sub_folder)
+    labels_train_dir = os.path.join(output_dir, 'labels', sub_folder)
 
     os.makedirs(images_train_dir, exist_ok=True)
     os.makedirs(labels_train_dir, exist_ok=True)
