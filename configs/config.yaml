@@ -1,4 +1,4 @@
-project_name: "SoccerNet_YOLO11_MEDIUM"
+project_name: "SoccerNet_YOLO8_X"
 
 paths:
   raw_data: "./dataset/raw_data"
