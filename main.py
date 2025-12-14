@@ -1,5 +1,7 @@
 import argparse
 import yaml
+
+from src.tracker import Tracker
 from src.data_manager import *
 from src.validator import *
 import os
@@ -11,7 +13,7 @@ def load_config(path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str, required=True, choices=["prepare", "train", "val"], help="Mode of operation")
+    parser.add_argument("--mode", type=str, required=True, choices=["prepare", "train", "val", "track"], help="Mode of operation")
     parser.add_argument("--verbose",action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
 
@@ -27,5 +29,6 @@ if __name__ == "__main__":
         validator = Validator(cfg)
         validator.run(verbose=verbose)
 
-    elif args.mode == "train":
-        pass
+    elif args.mode == "track":
+        validator = Tracker(cfg)
+        validator.run()

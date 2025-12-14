@@ -16,7 +16,7 @@ training:
   device: 0
 
 val:
-  split: "test"
+  split: "challenge2023"
   imgsz: 1280
   classes: [1,2,3]
   batch_size: 20
@@ -39,3 +39,6 @@ tracking:
     proximity_thresh: 0.5
     appearance_thresh: 0.25
     with_reid: True
+
+    reid_model: osnet_x0_25_msmt17.pt
+    model: ./weights/player_detection_best.pt
