@@ -10,7 +10,6 @@ class Validator:
         self.model = YOLO(self.cfg['paths']['model_weights'])
         self.dataset_yaml = os.path.join(self.cfg['paths']['yolo_dataset'], 'dataset.yaml')
 
-        # Se non passiamo valori, usiamo quelli di default
         if conf_values is None:
             self.conf_values = [0.20, 0.25, 0.35]
         else:
@@ -21,6 +20,7 @@ class Validator:
         else:
             self.iou_values = iou_values
 
+
     @staticmethod
     def _calculate_deta(precision, recall):
         if precision + recall == 0:
@@ -28,8 +28,9 @@ class Validator:
         deta = (precision * recall) / (precision + recall - (precision * recall))
         return deta
 
+
     def run(self, verbose=False):
-        # 1. FIX SINTASSI: Uso apici singoli dentro l'f-string
+
         if verbose:
             print(f"--- Avvio Grid Search su modello: {self.cfg['paths']['model_weights']}")
 
@@ -39,11 +40,6 @@ class Validator:
         best_deta = 0
         best_params = {}
 
-        # Recupera le classi dal config (es. [1, 2, 3])
-        # Questo è il filtro magico che ignorerà la palla (classe 0)
-        target_classes = self.cfg['val'].get('classes', [1, 2, 3])
-
-        # Apertura CSV con buffer azzerato
         with open(output_file, mode='w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['Conf', 'IoU', 'Precision', 'Recall', 'mAP50', 'DetA_Score'])
@@ -59,21 +55,11 @@ class Validator:
                         print(f"\n[Test {current_iter}/{total_iterations}] Conf={conf}, IoU={iou}...")
 
                     try:
-                        # ESEGUE LA VALIDAZIONE
                         results = self.model.val(
                             data=self.dataset_yaml,
                             split=self.cfg['val']['split'],
-
-                            # A. FILTRO CLASSI:
-                            # Passando [1, 2, 3], YOLO caricherà le label ma scarterà
-                            # tutte quelle con ID 0 (la palla).
-                            classes=target_classes,
-
-                            # B. UNIFICAZIONE:
-                            # Tratta 1, 2, 3 come se fossero tutti la stessa classe ("persona").
-                            # Fondamentale per il tuo obiettivo.
+                            classes=self.cfg['val']['classes'],
                             single_cls=True,
-
                             imgsz=self.cfg['val']['imgsz'],
                             batch=self.cfg['val']['batch_size'],
                             project=self.cfg['paths']['output_val'],
@@ -81,12 +67,11 @@ class Validator:
                             conf=conf,
                             iou=iou,
                             device=self.cfg['training']['device'],
-                            plots=True,  # Metti a True se vuoi vedere le immagini di debug
+                            plots=True,
                             verbose=False,
                             exist_ok=True
                         )
 
-                        # Estrazione metriche
                         p = results.box.mp
                         r = results.box.mr
                         map50 = results.box.map50
@@ -96,10 +81,8 @@ class Validator:
                         if verbose:
                             print(f"   -> P={p:.4f}, R={r:.4f}, DetA={deta:.4f}")
 
-                        # Scrittura su CSV
                         writer.writerow([conf, iou, p, r, map50, deta])
 
-                        # 2. FIX BUFFER: Forza la scrittura immediata su disco
                         file.flush()
 
                         if deta > best_deta:
@@ -110,7 +93,6 @@ class Validator:
 
                     except Exception as e:
                         print(f"ERRORE CRITICO (Conf={conf}, IoU={iou}):")
-                        # 3. FIX DEBUG: Stampa l'errore completo
                         traceback.print_exc()
 
         if verbose:
