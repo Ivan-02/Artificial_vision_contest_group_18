@@ -59,7 +59,7 @@ class DataManager:
             'test': 'images/test',
             'nc': 4,
             'names': {
-                0: 'ball',
+                0: 'player_uf',
                 1: 'goalkeeper',  # Nei txt sarà classe 1
                 2: 'player',  # Nei txt sarà classe 2
                 3: 'referee'  # Nei txt sarà classe 3
