@@ -2,11 +2,16 @@ project_name: "SoccerNet_YOLO8_X"
 
 device: 0
 
+names:
+  team: 18
+
+
 paths:
   raw_data: "./dataset/raw_data"
-  split: "challenge2023"
+  split: "train"
   yolo_dataset: "./dataset/yolo"
   model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
   output_submission: "./output/submissions"
+  output_subdirs: ["track_3"]
   output_val: "./output/validation"
   temp_tracker_yaml: "./output/temp_botsort.yaml"
