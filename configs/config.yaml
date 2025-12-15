@@ -5,9 +5,9 @@ device: 0
 names:
   team: 18
 
-
 paths:
   raw_data: "./dataset/raw_data"
+  roi: "./configs/roi.json"
   split: "train"
   yolo_dataset: "./dataset/yolo"
   model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"

@@ -6,6 +6,7 @@ import cv2
 import yaml
 import configparser
 from tqdm import tqdm
+import json
 
 
 class DataManager:
@@ -40,6 +41,132 @@ class DataManager:
 
         self._create_yolo_yaml()
         print("--- Preparazione Dataset Completata ---\n")
+
+    def prepare_behavior_gt(self):
+        """
+        Genera i file di Ground Truth per la behavior analysis.
+        Input: ROI json (self.cfg['paths']['roi'])
+        Output: behavior_XX_gt.txt nella cartella gt di ogni video.
+        """
+        print("--- Inizio generazione GT Behavior Analysis ---")
+
+        # 1. Caricamento ROI [cite: 95]
+        roi_path = self.cfg['paths']['roi']
+        if not os.path.exists(roi_path):
+            print(f"Errore: File ROI non trovato in {roi_path}")
+            return
+
+        with open(roi_path, 'r') as f:
+            rois = json.load(f)
+
+        # Assumiamo struttura standard raw_data -> train/test -> video_folder -> gt
+        subsets = ['train', 'test']
+
+        for subset in subsets:
+            subset_path = os.path.join(self.raw_data_path, subset)
+            if not os.path.exists(subset_path):
+                continue
+
+            video_folders = [f for f in os.listdir(subset_path) if os.path.isdir(os.path.join(subset_path, f))]
+
+            for video_name in tqdm(video_folders, desc=f"Generazione GT Behavior {subset}"):
+                video_path = os.path.join(subset_path, video_name)
+                gt_folder = os.path.join(video_path, 'gt')
+                gt_txt_path = os.path.join(gt_folder, 'gt.txt')
+                ini_path = os.path.join(video_path, 'gameinfo.ini')
+                img_dir = os.path.join(video_path, 'img1')
+
+                video_id_str = video_name.split('-')[1]
+                output_filename = f"behavior_{video_id_str}_gt.txt"
+                output_path = os.path.join(gt_folder, output_filename)
+
+                # 6. Check esistenza file per skip intelligente
+                if os.path.exists(output_path):
+                    continue
+
+                if not os.path.exists(gt_txt_path):
+                    continue
+
+                # 4. Identifica ID palla da ignorare usando gameinfo
+                id_map = self._parse_gameinfo(ini_path)
+                ball_ids = [k for k, v in id_map.items() if "ball" in v]
+
+                # Caricamento GT
+                try:
+                    # Colonne: frame_id, obj_id, x, y, w, h, conf, cls, vis, u
+                    df = pd.read_csv(gt_txt_path, header=None)
+                    df.columns = ['frame_id', 'obj_id', 'x', 'y', 'w', 'h', 'conf', 'cls', 'vis', 'u']
+                except Exception as e:
+                    print(f"Errore lettura GT per {video_name}: {e}")
+                    continue
+
+                # Necessario per dimensioni immagine (per denormalizzare ROI o normalizzare coordinate)
+                # Le specifiche dicono: coordinate ROI normalizzate [0,1]. [cite: 96]
+                # Coordinate GT sono assolute in pixel.
+                # Quindi serve dimensione immagine per convertire.
+
+                h_img, w_img = 1080, 1920  # Default fallback
+                if os.path.exists(img_dir):
+                    images = os.listdir(img_dir)
+                    if images:
+                        # Prendi la prima immagine valida
+                        first_img_path = os.path.join(img_dir, images[0])
+                        img = cv2.imread(first_img_path)
+                        if img is not None:
+                            h_img, w_img = img.shape[:2]
+
+                # Preparazione ROI denormalizzate [cite: 97]
+                abs_rois = {}
+                for key, r in rois.items():
+                    # Mappiamo roi1 -> ID 1, roi2 -> ID 2
+                    rid = 1 if 'roi1' in key else 2
+                    abs_rois[rid] = {
+                        'x_min': r['x'] * w_img,
+                        'y_min': r['y'] * h_img,
+                        'x_max': (r['x'] + r['width']) * w_img,
+                        'y_max': (r['y'] + r['height']) * h_img
+                    }
+
+                # Elaborazione frame per frame
+                frames = sorted(df['frame_id'].unique())
+
+                with open(output_path, 'w') as f_out:
+                    for frame_id in frames:
+                        frame_data = df[df['frame_id'] == frame_id]
+
+                        counts = {1: 0, 2: 0}  # Contatori per region_id 1 e 2
+
+                        for _, row in frame_data.iterrows():
+                            obj_id = int(row['obj_id'])
+
+                            # 4. Ignora palla
+                            if obj_id in ball_ids:
+                                continue
+
+                            # Calcolo centro della base
+                            # x, y sono top-left. w, h sono width, height.
+                            # Base center x = x + w/2
+                            # Base center y = y + h (fondo del box)
+
+                            c_x = row['x'] + (row['w'] / 2.0)
+                            c_y = row['y'] + row['h']
+
+                            # Verifica appartenenza ROI
+                            for rid, r in abs_rois.items():
+                                if (r['x_min'] <= c_x <= r['x_max']) and (r['y_min'] <= c_y <= r['y_max']):
+                                    counts[rid] += 1
+
+                        # 5. Scrittura riga: frame_id, region_id, n_players [cite: 120]
+                        line1 = f"{int(frame_id)},1,{counts[1]}\n"
+                        line2 = f"{int(frame_id)},2,{counts[2]}\n"
+
+                        f_out.write(line1)
+                        f_out.write(line2)
+
+                        # 6. Flush memoria
+                        f_out.flush()
+
+        print("--- Generazione GT Behavior Completata ---\n")
 
     def _create_yolo_yaml(self):
         yaml_path = os.path.join(self.yolo_dataset_path, 'dataset.yaml')

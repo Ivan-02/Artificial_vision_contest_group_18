@@ -21,7 +21,7 @@ class Tracker:
         self.model = YOLO(self.cfg['paths']['model_weights'])
 
         # Setup output directory per il tracking puro
-        self.output_dir = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'])
+        self.output_dir = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'], "_track")
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.conf = self.cfg_mode['conf_threshold']
@@ -234,7 +234,7 @@ class Tracker:
         if self.run_hota:
             print("\n--- Avvio Valutazione Automatica (HOTA) ---")
             original_subdirs = self.cfg['paths'].get('output_subdirs', [])
-            current_subdir = self.cfg_mode['test_name']
+            current_subdir = os.path.join(self.cfg_mode['test_name'], "_track")
             self.cfg['paths']['output_subdirs'] = [current_subdir]
             evaluator = HotaEvaluator(self.cfg)
             evaluator.run()

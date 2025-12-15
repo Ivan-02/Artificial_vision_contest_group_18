@@ -2,7 +2,7 @@ test_name: "track_3"
 hota: True
 conf_threshold: 0.2
 iou_threshold: 0.7
-display: False
+display: True
 display_width: 1280
 half: True
 show: False
@@ -12,7 +12,7 @@ verbose: False
 persist: True
 agnostic_nms: True
 classes: [1,2,3]
-max_video: 10
+#max_video: 10
 
 tracker_settings:
     tracker_type: botsort
