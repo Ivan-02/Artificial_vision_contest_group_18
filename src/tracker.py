@@ -15,13 +15,10 @@ class Tracker:
 
         self._check_keys()
 
-        # Carica il modello
         print("Caricamento modello...")
         self.model = YOLO(self.cfg['paths']['model_weights'])
 
-        # Verifica classi del modello (Debug)
         print(f"Classi del modello: {self.model.names}")
-        # Dovrebbe essere {0: 'ball', 1: 'player', 2: 'referee', ...}
 
         self.output_dir = self.cfg['paths']['output_submission']
         os.makedirs(self.output_dir, exist_ok=True)
@@ -31,12 +28,9 @@ class Tracker:
 
         self.tracker_yaml_path = self.cfg['paths'].get('temp_tracker_yaml', './temp_tracker.yaml')
 
-        # --- IMPOSTAZIONI VISUALIZZAZIONE ---
         self.display_width = self.cfg_mode['display_width']
         self.enable_display = self.cfg_mode['display']
-        # ------------------------------------
 
-        # Generazione file config temporaneo per il tracker
         tracker_settings = self.cfg_mode['tracker_settings']
         os.makedirs(os.path.dirname(self.tracker_yaml_path), exist_ok=True)
 
@@ -45,19 +39,15 @@ class Tracker:
 
         print(f"File configurazione tracker generato in: {self.tracker_yaml_path}")
 
+
+
     def _check_keys(self):
-        """
-        Controlla solo che i nomi delle chiavi siano presenti.
-        Non controlla i tipi di dato.
-        """
-        # 1. Chiavi principali attese
         required_keys = {
             'conf_threshold', 'iou_threshold', 'display', 'display_width',
             'half', 'show', 'imgsz', 'stream', 'verbose', 'persist',
             'agnostic_nms', 'classes', 'tracker_settings'
         }
 
-        # 2. Chiavi attese dentro 'tracker_settings'
         required_tracker_keys = {
             'tracker_type', 'track_high_thresh', 'track_low_thresh',
             'new_track_thresh', 'track_buffer', 'match_thresh',
@@ -65,7 +55,6 @@ class Tracker:
             'with_reid', 'fuse_score', 'reid_model', 'model'
         }
 
-        # Verifica chiavi principali
         current_keys = set(self.cfg_mode.keys())
         missing_keys = required_keys - current_keys
 
@@ -73,8 +62,6 @@ class Tracker:
             print(f"[ERRORE CONFIG] Mancano le seguenti chiavi principali: {list(missing_keys)}")
             sys.exit(1)
 
-        # Verifica chiavi tracker_settings
-        # Nota: siamo sicuri che 'tracker_settings' esiste perché ha passato il controllo sopra
         current_tracker_keys = set(self.cfg_mode['tracker_settings'].keys())
         missing_tracker_keys = required_tracker_keys - current_tracker_keys
 
@@ -83,20 +70,8 @@ class Tracker:
             sys.exit(1)
 
 
-        # 2. Controllo specifico per tracker_settings
-        t_settings = self.cfg_mode['tracker_settings']
-        for key, expected_type in required_tracker_keys.items():
-            if key not in t_settings:
-                raise ValueError(f"Manca la chiave obbligatoria in tracker_settings: '{key}'")
-
-            value = t_settings[key]
-            if not isinstance(value, expected_type):
-                raise ValueError(
-                    f"Tipo errato per tracker_settings['{key}']. Atteso {expected_type}, ricevuto {type(value)}")
-
     @staticmethod
-    def _get_id_color(self, id_int):
-        """Genera un colore BGR consistente per ogni ID."""
+    def _get_id_color(id_int):
         np.random.seed(int(id_int))
         color = np.random.randint(0, 255, size=3).tolist()
         return tuple(color)
@@ -106,10 +81,8 @@ class Tracker:
         if self.enable_display:
             print("Visualizzazione attiva: Premi 'q' sulla finestra video per interrompere.")
 
-        # Costruzione percorso dati
         test_dir = os.path.join(self.cfg['paths']['raw_data'], self.cfg['paths']['split'])
 
-        # Controllo di sicurezza esistenza cartella
         if not os.path.exists(test_dir):
             print(f"ERRORE CRITICO: La cartella dati non esiste: {test_dir}")
             return
@@ -120,11 +93,9 @@ class Tracker:
             print(f"Nessuna cartella video trovata in {test_dir}")
             return
 
-        # Loop principale sui video
         for video_name in tqdm(video_folders, desc="Tracking Videos"):
             video_path = os.path.join(test_dir, video_name, 'img1')
 
-            # Controllo esistenza immagini per evitare warning 'source is missing'
             if not os.path.exists(video_path):
                 print(f"SKIP: Percorso immagini non trovato per {video_name}")
                 continue
@@ -156,9 +127,7 @@ class Tracker:
             window_created = False
 
             try:
-                # Loop sui frame
                 for result in results:
-                    # Estrazione ID frame dal nome file
                     if hasattr(result, 'path'):
                         try:
                             frame_idx = os.path.basename(result.path).split('.')[0]
@@ -168,22 +137,16 @@ class Tracker:
                     else:
                         continue
 
-                    # Copia immagine per display
                     if self.enable_display:
                         frame_display = result.orig_img.copy()
 
-                    # Se ci sono detection
                     if result.boxes.id is not None:
-                        # Estrazione dati tensori -> numpy
                         boxes_xywh = result.boxes.xywh.cpu().numpy()
                         track_ids = result.boxes.id.int().cpu().numpy()
                         confs = result.boxes.conf.cpu().numpy()
-                        cls_ids = result.boxes.cls.int().cpu().numpy()  # Le classi predette
+                        cls_ids = result.boxes.cls.int().cpu().numpy()
 
-                        # --- VERIFICA CLASSI ---
-                        # Se per sbaglio passa una classe 0, la filtriamo manualmente qui
                         if 0 in cls_ids:
-                            # Opzionale: print(f"Warning: Classe 0 rilevata nel frame {frame_id}")
                             pass
 
                         boxes_xyxy = result.boxes.xyxy.cpu().numpy().astype(int)
@@ -191,21 +154,17 @@ class Tracker:
                         for i, track_id in enumerate(track_ids):
                             current_class = cls_ids[i]
 
-                            # DOPPIA SICUREZZA: Se è palla (0), saltiamo tutto
                             if current_class == 0:
                                 continue
 
                             conf = confs[i]
 
-                            # 1. Scrittura su file (xywh)
                             x_c, y_c, w, h = boxes_xywh[i]
                             x1_txt = x_c - (w / 2)
                             y1_txt = y_c - (h / 2)
-                            # Nota: SoccerNet format richiede <frame>,<id>,<bb_left>,<bb_top>,<bb_width>,<bb_height>,<conf>
                             line = f"{frame_id},{track_id},{x1_txt:.2f},{y1_txt:.2f},{w:.2f},{h:.2f},{conf:.2f},-1,-1,-1\n"
                             f_out.write(line)
 
-                            # 2. Disegno (xyxy)
                             if self.enable_display:
                                 color_bgr = self._get_id_color(track_id)
                                 x1_draw, y1_draw, x2_draw, y2_draw = boxes_xyxy[i]
@@ -222,11 +181,9 @@ class Tracker:
 
                     f_out.flush()
 
-                    # --- GESTIONE FINESTRA ---
                     if self.enable_display:
                         h_orig, w_orig = frame_display.shape[:2]
                         if h_orig > 0 and w_orig > 0:
-                            # Resize intelligente
                             aspect_ratio = h_orig / w_orig
                             display_height = int(self.display_width * aspect_ratio)
                             frame_resized = cv2.resize(frame_display, (self.display_width, display_height))
@@ -234,7 +191,6 @@ class Tracker:
                             cv2.imshow(window_name, frame_resized)
                             window_created = True
 
-                        # Tasto Q per uscire
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             print("\nInterruzione richiesta dall'utente.")
                             f_out.close()
@@ -247,7 +203,6 @@ class Tracker:
 
             finally:
                 f_out.close()
-                # Chiusura sicura della finestra singola
                 if self.enable_display and window_created:
                     try:
                         cv2.destroyWindow(window_name)

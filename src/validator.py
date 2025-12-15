@@ -19,11 +19,8 @@ class Validator:
             d = yaml.safe_load(f)
             self.model.model.names = d['names']
 
+
     def _check_keys(self):
-        """
-        Controlla che il dizionario di configurazione contenga
-        tutte le chiavi richieste (senza controllo tipi).
-        """
         required_keys = {
             'verbose',
             'imgsz',
@@ -36,12 +33,10 @@ class Validator:
             'exist_ok'
         }
 
-        # self.inference_cfg è la variabile dove hai caricato il file yaml
         current_keys = set(self.cfg_values.keys())
         missing_keys = required_keys - current_keys
 
         if missing_keys:
-            # Messaggio breve ed uscita pulita
             print(f"[ERRORE] Configurazione incompleta. Chiavi mancanti: {list(missing_keys)}")
             sys.exit(1)
 
