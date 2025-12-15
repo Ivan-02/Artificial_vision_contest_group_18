@@ -1,4 +1,4 @@
-project_name: "AV_contest_gr_18"
+project_name: "SoccerNet_YOLO8_X"
 
 paths:
   raw_data: "./dataset/raw_data"
@@ -19,26 +19,27 @@ val:
   split: "challenge2023"
   imgsz: 1280
   classes: [1,2,3]
-  batch_size: 20
+  batch_size: 16
   conf_threshold: 0.001
-  iou_threshold: [0.50, 0.55, 0.65]
-
+  iou_threshold: [0.45, 0.60, 0.7]
 
 tracking:
-  conf_threshold: 0.3
-  iou_threshold: 0.5
+  conf_threshold: 0.2
+  iou_threshold: 0.60
 
   tracker_settings:
     tracker_type: botsort
     track_high_thresh: 0.6
-    track_low_thresh: 0.1
-    new_track_thresh: 0.6
-    track_buffer: 60
+    track_low_thresh: 0.3
+    new_track_thresh: 0.80
+    track_buffer: 300
     match_thresh: 0.8
     gmc_method: sparseOptFlow
-    proximity_thresh: 0.5
-    appearance_thresh: 0.25
+    proximity_thresh: 0.70
+    appearance_thresh: 0.30
     with_reid: True
-
-    reid_model: osnet_x0_25_msmt17.pt
-    model: ./weights/player_detection_best.pt
+    fuse_score: True
+    reid_model: osnet_x1_0_msmt17.pt
+    model: auto
+    imgsz: 1088
+    device: 0
