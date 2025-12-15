@@ -4,7 +4,7 @@ device: 0
 
 paths:
   raw_data: "./dataset/raw_data"
-  split: "test"
+  split: "challenge2023"
   yolo_dataset: "./dataset/yolo"
   model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
   output_submission: "./output/submissions"

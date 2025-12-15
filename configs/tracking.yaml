@@ -1,5 +1,6 @@
+test_name: "track_1"
 conf_threshold: 0.2
-iou_threshold: 0.30
+iou_threshold: 0.7
 display: True
 display_width: 1280
 half: True

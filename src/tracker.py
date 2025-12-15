@@ -20,7 +20,7 @@ class Tracker:
 
         print(f"Classi del modello: {self.model.names}")
 
-        self.output_dir = self.cfg['paths']['output_submission']
+        self.output_dir = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'])
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.conf = self.cfg_mode['conf_threshold']
@@ -43,7 +43,7 @@ class Tracker:
 
     def _check_keys(self):
         required_keys = {
-            'conf_threshold', 'iou_threshold', 'display', 'display_width',
+            'test_name','conf_threshold', 'iou_threshold', 'display', 'display_width',
             'half', 'show', 'imgsz', 'stream', 'verbose', 'persist',
             'agnostic_nms', 'classes', 'tracker_settings'
         }
