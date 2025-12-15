@@ -16,7 +16,7 @@ training:
   device: 0
 
 val:
-  split: "challenge2023"
+  split: "test"
   imgsz: 1280
   classes: [1,2,3]
   batch_size: 16
