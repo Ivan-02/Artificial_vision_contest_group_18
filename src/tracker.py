@@ -1,4 +1,5 @@
 import os
+import sys
 import cv2
 import yaml
 import numpy as np
@@ -8,8 +9,11 @@ import traceback
 
 
 class Tracker:
-    def __init__(self, config):
+    def __init__(self, config, conf_mode):
         self.cfg = config
+        self.cfg_mode = conf_mode
+
+        self._check_keys()
 
         # Carica il modello
         print("Caricamento modello...")
@@ -22,24 +26,75 @@ class Tracker:
         self.output_dir = self.cfg['paths']['output_submission']
         os.makedirs(self.output_dir, exist_ok=True)
 
-        self.conf = self.cfg['tracking']['conf_threshold']
-        self.iou = self.cfg['tracking']['iou_threshold']
+        self.conf = self.cfg_mode['conf_threshold']
+        self.iou = self.cfg_mode['iou_threshold']
 
         self.tracker_yaml_path = self.cfg['paths'].get('temp_tracker_yaml', './temp_tracker.yaml')
 
         # --- IMPOSTAZIONI VISUALIZZAZIONE ---
-        self.display_width = 1280
-        self.enable_display = True
+        self.display_width = self.cfg_mode['display_width']
+        self.enable_display = self.cfg_mode['display']
         # ------------------------------------
 
         # Generazione file config temporaneo per il tracker
-        tracker_settings = self.cfg['tracking']['tracker_settings']
+        tracker_settings = self.cfg_mode['tracker_settings']
         os.makedirs(os.path.dirname(self.tracker_yaml_path), exist_ok=True)
+
         with open(self.tracker_yaml_path, 'w') as f:
             yaml.dump(tracker_settings, f, sort_keys=False)
 
         print(f"File configurazione tracker generato in: {self.tracker_yaml_path}")
 
+    def _check_keys(self):
+        """
+        Controlla solo che i nomi delle chiavi siano presenti.
+        Non controlla i tipi di dato.
+        """
+        # 1. Chiavi principali attese
+        required_keys = {
+            'conf_threshold', 'iou_threshold', 'display', 'display_width',
+            'half', 'show', 'imgsz', 'stream', 'verbose', 'persist',
+            'agnostic_nms', 'classes', 'tracker_settings'
+        }
+
+        # 2. Chiavi attese dentro 'tracker_settings'
+        required_tracker_keys = {
+            'tracker_type', 'track_high_thresh', 'track_low_thresh',
+            'new_track_thresh', 'track_buffer', 'match_thresh',
+            'gmc_method', 'proximity_thresh', 'appearance_thresh',
+            'with_reid', 'fuse_score', 'reid_model', 'model'
+        }
+
+        # Verifica chiavi principali
+        current_keys = set(self.cfg_mode.keys())
+        missing_keys = required_keys - current_keys
+
+        if missing_keys:
+            print(f"[ERRORE CONFIG] Mancano le seguenti chiavi principali: {list(missing_keys)}")
+            sys.exit(1)
+
+        # Verifica chiavi tracker_settings
+        # Nota: siamo sicuri che 'tracker_settings' esiste perché ha passato il controllo sopra
+        current_tracker_keys = set(self.cfg_mode['tracker_settings'].keys())
+        missing_tracker_keys = required_tracker_keys - current_tracker_keys
+
+        if missing_tracker_keys:
+            print(f"\n[ERRORE CONFIG] In 'tracker_settings' mancano: {list(missing_tracker_keys)}")
+            sys.exit(1)
+
+
+        # 2. Controllo specifico per tracker_settings
+        t_settings = self.cfg_mode['tracker_settings']
+        for key, expected_type in required_tracker_keys.items():
+            if key not in t_settings:
+                raise ValueError(f"Manca la chiave obbligatoria in tracker_settings: '{key}'")
+
+            value = t_settings[key]
+            if not isinstance(value, expected_type):
+                raise ValueError(
+                    f"Tipo errato per tracker_settings['{key}']. Atteso {expected_type}, ricevuto {type(value)}")
+
+    @staticmethod
     def _get_id_color(self, id_int):
         """Genera un colore BGR consistente per ogni ID."""
         np.random.seed(int(id_int))
@@ -52,7 +107,7 @@ class Tracker:
             print("Visualizzazione attiva: Premi 'q' sulla finestra video per interrompere.")
 
         # Costruzione percorso dati
-        test_dir = os.path.join(self.cfg['paths']['raw_data'], self.cfg['val']['split'])
+        test_dir = os.path.join(self.cfg['paths']['raw_data'], self.cfg['paths']['split'])
 
         # Controllo di sicurezza esistenza cartella
         if not os.path.exists(test_dir):
@@ -80,22 +135,20 @@ class Tracker:
                 print(f"Skipping {video_name}, file esistente.")
                 continue
 
-            # Tracking
-            # show=False perché gestiamo noi la visualizzazione per evitare errori
             results = self.model.track(
                 source=video_path,
                 conf=self.conf,
                 iou=self.iou,
                 tracker=self.tracker_yaml_path,
-                classes=[1, 2, 3],  # Chiediamo esplicitamente di ignorare la 0
-                persist=True,
-                device=self.cfg['tracking']['tracker_settings']['device'],
-                verbose=False,
-                stream=True,
-                show=False,
-                agnostic_nms=True,
-                imgsz=self.cfg['tracking']['tracker_settings']['imgsz'],
-                half=True,
+                classes=self.cfg_mode['classes'],
+                persist=self.cfg_mode['persist'],
+                device=self.cfg['device'],
+                verbose=self.cfg_mode['verbose'],
+                stream=self.cfg_mode['stream'],
+                show=self.cfg_mode['show'],
+                agnostic_nms=self.cfg_mode['agnostic_nms'],
+                imgsz=self.cfg_mode['imgsz'],
+                half=self.cfg_mode['half'],
             )
 
             f_out = open(output_txt, 'w')
@@ -130,6 +183,7 @@ class Tracker:
                         # --- VERIFICA CLASSI ---
                         # Se per sbaglio passa una classe 0, la filtriamo manualmente qui
                         if 0 in cls_ids:
+                            # Opzionale: print(f"Warning: Classe 0 rilevata nel frame {frame_id}")
                             pass
 
                         boxes_xyxy = result.boxes.xyxy.cpu().numpy().astype(int)
@@ -143,61 +197,28 @@ class Tracker:
 
                             conf = confs[i]
 
-                            # 1. Scrittura su file (xywh) per la sottomissione
+                            # 1. Scrittura su file (xywh)
                             x_c, y_c, w, h = boxes_xywh[i]
                             x1_txt = x_c - (w / 2)
                             y1_txt = y_c - (h / 2)
+                            # Nota: SoccerNet format richiede <frame>,<id>,<bb_left>,<bb_top>,<bb_width>,<bb_height>,<conf>
                             line = f"{frame_id},{track_id},{x1_txt:.2f},{y1_txt:.2f},{w:.2f},{h:.2f},{conf:.2f},-1,-1,-1\n"
                             f_out.write(line)
 
-                            # 2. Disegno (MODIFICATO: Solo ID box in basso al centro)
+                            # 2. Disegno (xyxy)
                             if self.enable_display:
                                 color_bgr = self._get_id_color(track_id)
                                 x1_draw, y1_draw, x2_draw, y2_draw = boxes_xyxy[i]
 
-                                # --- LOGICA DI VISUALIZZAZIONE PULITA ---
+                                cv2.rectangle(frame_display, (x1_draw, y1_draw), (x2_draw, y2_draw), color_bgr, 2)
 
-                                # Calcolo il centro della base del box (i piedi del giocatore)
-                                center_x = int((x1_draw + x2_draw) / 2)
-                                bottom_y = int(y2_draw)
+                                label = f"ID:{track_id} ({conf:.2f})"
 
-                                # Preparazione testo (Solo ID)
-                                label_text = str(track_id)
-                                font_face = cv2.FONT_HERSHEY_SIMPLEX
-                                font_scale = 0.6
-                                thickness = 2
-
-                                # Calcolo dimensioni del testo per creare lo sfondo su misura
-                                (text_w, text_h), baseline = cv2.getTextSize(label_text, font_face, font_scale,
-                                                                             thickness)
-
-                                # Padding (margine) attorno al numero
-                                pad_x = 8
-                                pad_y = 6
-
-                                box_w = text_w + (pad_x * 2)
-                                box_h = text_h + (pad_y * 2)
-
-                                # Coordinate del piccolo riquadro ID
-                                # Lo posizioniamo centrato orizzontalmente rispetto al giocatore
-                                # e appena sopra la linea dei piedi (bottom_y)
-                                box_x1 = center_x - (box_w // 2)
-                                box_y1 = bottom_y - box_h
-                                box_x2 = box_x1 + box_w
-                                box_y2 = bottom_y
-
-                                # Disegno sfondo colorato (pieno)
-                                cv2.rectangle(frame_display, (box_x1, box_y1), (box_x2, box_y2), color_bgr, -1)
-
-                                # Disegno bordo bianco sottile per contrasto
-                                cv2.rectangle(frame_display, (box_x1, box_y1), (box_x2, box_y2), (255, 255, 255), 1)
-
-                                # Scrittura del numero (Bianco per essere leggibile sul colore)
-                                text_x = box_x1 + pad_x
-                                text_y = box_y1 + text_h + pad_y - 2  # Aggiustamento fine per centratura verticale
-
-                                cv2.putText(frame_display, label_text, (text_x, text_y),
-                                            font_face, font_scale, (255, 255, 255), thickness)
+                                (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+                                cv2.rectangle(frame_display, (x1_draw, y1_draw - 20), (x1_draw + w_text, y1_draw),
+                                              color_bgr, -1)
+                                cv2.putText(frame_display, label, (x1_draw, y1_draw - 5),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
                     f_out.flush()
 
@@ -213,19 +234,20 @@ class Tracker:
                             cv2.imshow(window_name, frame_resized)
                             window_created = True
 
-                            # Tasto Q per uscire
-                            if cv2.waitKey(1) & 0xFF == ord('q'):
-                                print("\nInterruzione richiesta dall'utente.")
-                                f_out.close()
-                                cv2.destroyAllWindows()
-                                return
+                        # Tasto Q per uscire
+                        if cv2.waitKey(1) & 0xFF == ord('q'):
+                            print("\nInterruzione richiesta dall'utente.")
+                            f_out.close()
+                            cv2.destroyAllWindows()
+                            return
 
             except Exception as e:
                 print(f"Errore durante il video {video_name}: {e}")
-                traceback.print_exc()
+                traceback.print_exc()  # Stampa l'errore completo per debug
 
             finally:
                 f_out.close()
+                # Chiusura sicura della finestra singola
                 if self.enable_display and window_created:
                     try:
                         cv2.destroyWindow(window_name)
@@ -234,4 +256,4 @@ class Tracker:
 
         if self.enable_display:
             cv2.destroyAllWindows()
-        print("\n--- Tracking Completato ---")
+            print("\n--- Tracking Completato ---")

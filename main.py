@@ -1,6 +1,4 @@
 import argparse
-import yaml
-
 from src.tracker import Tracker
 from src.data_manager import *
 from src.validator import *
@@ -13,22 +11,27 @@ def load_config(path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str, required=True, choices=["prepare", "train", "val", "track"], help="Mode of operation")
-    parser.add_argument("--verbose",action="store_true", help="Increase output verbosity")
+    parser.add_argument("--mode", type=str, required=True, choices=["prepare", "val", "track"], help="Mode of operation")
+    parser.add_argument("--config", type=str, required=True, help="Config file")
     args = parser.parse_args()
 
     print(os.getcwd())
     cfg = load_config("./configs/config.yaml")
-    verbose = args.verbose
+
+    if not args.config:
+        print("Config file not provided")
+        exit(1)
+    else:
+        cfg_mode = load_config(str(args.config))
 
     if args.mode == "prepare":
         dm = DataManager(cfg)
         dm.prepare_dataset()
 
     elif args.mode == "val":
-        validator = Validator(cfg)
-        validator.run(verbose=verbose)
+        validator = Validator(cfg, cfg_mode)
+        validator.run()
 
     elif args.mode == "track":
-        validator = Tracker(cfg)
+        validator = Tracker(cfg, cfg_mode)
         validator.run()

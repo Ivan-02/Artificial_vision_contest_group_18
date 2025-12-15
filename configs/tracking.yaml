@@ -1,0 +1,27 @@
+conf_threshold: 0.2
+iou_threshold: 0.30
+display: True
+display_width: 1280
+half: True
+show: False
+imgsz: 1088
+stream: True
+verbose: False
+persist: True
+agnostic_nms: True
+classes: [1,2,3]
+
+tracker_settings:
+  tracker_type: botsort
+  track_high_thresh: 0.6
+  track_low_thresh: 0.3
+  new_track_thresh: 0.90
+  track_buffer: 300
+  match_thresh: 0.8
+  gmc_method: sparseOptFlow
+  proximity_thresh: 0.50
+  appearance_thresh: 0.30
+  with_reid: False
+  fuse_score: True
+  reid_model: osnet_ain_x1_0_msmt17.pt #osnet_x1_0_msmt17.pt
+  model: auto

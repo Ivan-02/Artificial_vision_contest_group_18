@@ -1,0 +1,9 @@
+verbose: True
+imgsz: 1088
+classes: [1,2,3]
+batch_size: 16
+conf_threshold: 0.001
+single_cls: True
+iou_threshold: [0.45, 0.60, 0.7]
+plots: True
+exist_ok: True

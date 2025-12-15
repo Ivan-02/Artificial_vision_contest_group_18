@@ -1,45 +1,12 @@
 project_name: "SoccerNet_YOLO8_X"
 
+device: 0
+
 paths:
   raw_data: "./dataset/raw_data"
+  split: "test"
   yolo_dataset: "./dataset/yolo"
   model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
   output_submission: "./output/submissions"
   output_val: "./output/validation"
   temp_tracker_yaml: "./output/temp_botsort.yaml"
-
-training:
-  model_size: "yolo11m.pt"
-  epochs: 50
-  imgsz: 1280
-  batch_size: 8
-  device: 0
-
-val:
-  split: "test"
-  imgsz: 1280
-  classes: [1,2,3]
-  batch_size: 16
-  conf_threshold: 0.001
-  iou_threshold: [0.45, 0.60, 0.7]
-
-tracking:
-  conf_threshold: 0.2
-  iou_threshold: 0.60
-
-  tracker_settings:
-    tracker_type: botsort
-    track_high_thresh: 0.6
-    track_low_thresh: 0.3
-    new_track_thresh: 0.80
-    track_buffer: 300
-    match_thresh: 0.8
-    gmc_method: sparseOptFlow
-    proximity_thresh: 0.70
-    appearance_thresh: 0.30
-    with_reid: True
-    fuse_score: True
-    reid_model: osnet_x1_0_msmt17.pt
-    model: auto
-    imgsz: 1088
-    device: 0
