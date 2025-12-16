@@ -20,10 +20,10 @@ if __name__ == "__main__":
     print(os.getcwd())
     cfg = load_config("./configs/config.yaml")
 
-    if not args.config and args.mode != "eval":
+    if not args.config and args.mode != "eval" and args.mode != "prepare_dt" and args.mode != "prepare_bh":
         print("Config file not provided")
         exit(1)
-    elif args.mode != "eval":
+    elif args.mode != "eval" and args.mode != "prepare_dt" and args.mode != "prepare_bh":
         cfg_mode = load_config(str(args.config))
 
     if args.mode == "prepare_dt":
