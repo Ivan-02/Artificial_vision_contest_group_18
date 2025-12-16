@@ -1,30 +1,31 @@
-test_name: "track_3"
+test_name: "track_train"
 eval: True
-conf_threshold: 0.2
+conf_threshold: 0.5
 iou_threshold: 0.7
-display: True
+display: False
 display_width: 1280
 half: True
 show: False
-imgsz: 1088
+imgsz: 640
 stream: True
 verbose: False
 persist: True
 agnostic_nms: True
 classes: [1,2,3]
-max_video: 1
+random: False
+max_video: 49
 
 tracker_settings:
     tracker_type: botsort
-    track_high_thresh: 0.75
-    track_low_thresh: 0.65
-    new_track_thresh: 0.80
-    track_buffer: 300
+    track_high_thresh: 0.7
+    track_low_thresh: 0.50
+    new_track_thresh: 0.8
+    track_buffer: 150
     match_thresh: 0.8
     gmc_method: sparseOptFlow
     proximity_thresh: 0.70
     appearance_thresh: 0.30
     with_reid: False
-    fuse_score: False
+    fuse_score: True
     reid_model: osnet_x0_25_msmt17.pt
     model: auto

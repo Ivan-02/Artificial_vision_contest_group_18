@@ -19,7 +19,6 @@ class Tracker:
         print("Caricamento modello...")
         self.model = YOLO(self.cfg['paths']['model_weights'])
 
-        # Setup output directory per il tracking puro
         self.output_dir = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'], "track")
         os.makedirs(self.output_dir, exist_ok=True)
 
@@ -31,7 +30,9 @@ class Tracker:
 
         self.display_width = self.cfg_mode['display_width']
         self.enable_display = self.cfg_mode['display']
+
         self.max_video = self.cfg_mode.get('max_video', None)
+        self.random_mode = self.cfg_mode['random']
         self.run_hota = self.cfg_mode['eval']
 
         with open(self.tracker_yaml_path, 'w') as f:
@@ -44,7 +45,7 @@ class Tracker:
         required_keys = {
             'test_name', 'conf_threshold', 'iou_threshold', 'display', 'display_width',
             'half', 'show', 'imgsz', 'stream', 'verbose', 'persist',
-            'agnostic_nms', 'classes', 'tracker_settings', 'eval'
+            'agnostic_nms', 'classes', 'tracker_settings', 'eval', 'random'
         }
 
         required_tracker_keys = {
@@ -79,10 +80,10 @@ class Tracker:
     def get_video_list(self):
         test_dir = os.path.join(self.cfg['paths']['raw_data'], self.cfg['paths']['split'])
         if not os.path.exists(test_dir):
-            print(f"ERRORE CRITICO: La cartella dati non esiste: {test_dir}") # Ripristinato messaggio originale
+            print(f"ERRORE CRITICO: La cartella dati non esiste: {test_dir}")
             return []
 
-        all_video_folders = [f for f in os.listdir(test_dir) if os.path.isdir(os.path.join(test_dir, f))]
+        all_video_folders = sorted([f for f in os.listdir(test_dir) if os.path.isdir(os.path.join(test_dir, f))])
 
         if not all_video_folders:
             print(f"Nessuna cartella video trovata in {test_dir}")
@@ -90,8 +91,15 @@ class Tracker:
 
         if self.max_video is not None and isinstance(self.max_video, int):
             if self.max_video < len(all_video_folders):
-                video_folders = random.sample(all_video_folders, self.max_video)
-                print(f"RANDOM MODE: Selezionati {len(video_folders)} video su {len(all_video_folders)} totali.")
+
+                if self.random_mode:
+                    video_folders = random.sample(all_video_folders, self.max_video)
+                    print(f"RANDOM MODE: Selezionati {len(video_folders)} video su {len(all_video_folders)} totali.")
+                else:
+                    video_folders = all_video_folders[:self.max_video]
+                    print(
+                        f"SEQUENTIAL MODE: Selezionati i primi {len(video_folders)} video su {len(all_video_folders)} totali.")
+
                 return video_folders
             else:
                 print(f"Richiesti {self.max_video} video, ma ne esistono solo {len(all_video_folders)}. Presi tutti.")
@@ -242,14 +250,18 @@ class Tracker:
     def _draw_on_frame(self, img, det):
         color = self._get_id_color(det['track_id'])
         x1, y1, x2, y2 = map(int, det['xyxy'])
+
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-        label = f"ID:{det['track_id']} ({det['conf']:.2f})"
+
+        cls_id = int(det['cls_id'])
+
+        label = f"ID:{det['track_id']} C:{cls_id} ({det['conf']:.2f})"
 
         (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
-        cv2.rectangle(img, (x1, y1 - 20), (x1 + w_text, y1),
-                      color, -1)
-        cv2.putText(img, label, (x1, y1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+
+        cv2.rectangle(img, (x1, y1 - 20), (x1 + w_text, y1), color, -1)
+
+        cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
     def _show_frame(self, window_name, img):
         h, w = img.shape[:2]
