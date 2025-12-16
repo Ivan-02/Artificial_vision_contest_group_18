@@ -8,10 +8,10 @@ names:
 paths:
   raw_data: "./dataset/raw_data"
   roi: "./configs/roi.json"
-  split: "train"
+  split: "test"
   yolo_dataset: "./dataset/yolo"
   model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
   output_submission: "./output/submissions"
-  output_subdirs: ["track_3"]
+  output_subdirs: ["track_3/behavior"]
   output_val: "./output/validation"
   temp_tracker_yaml: "./output/temp_botsort.yaml"

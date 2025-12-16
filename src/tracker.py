@@ -7,8 +7,7 @@ from ultralytics import YOLO
 from tqdm import tqdm
 import traceback
 import random
-
-from .evaluator import HotaEvaluator
+from .evaluator import Evaluator
 
 
 class Tracker:
@@ -21,7 +20,7 @@ class Tracker:
         self.model = YOLO(self.cfg['paths']['model_weights'])
 
         # Setup output directory per il tracking puro
-        self.output_dir = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'], "_track")
+        self.output_dir = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'], "track")
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.conf = self.cfg_mode['conf_threshold']
@@ -33,7 +32,7 @@ class Tracker:
         self.display_width = self.cfg_mode['display_width']
         self.enable_display = self.cfg_mode['display']
         self.max_video = self.cfg_mode.get('max_video', None)
-        self.run_hota = self.cfg_mode['hota']
+        self.run_hota = self.cfg_mode['eval']
 
         with open(self.tracker_yaml_path, 'w') as f:
             yaml.dump(self.cfg_mode['tracker_settings'], f, sort_keys=False)
@@ -45,7 +44,7 @@ class Tracker:
         required_keys = {
             'test_name', 'conf_threshold', 'iou_threshold', 'display', 'display_width',
             'half', 'show', 'imgsz', 'stream', 'verbose', 'persist',
-            'agnostic_nms', 'classes', 'tracker_settings', 'hota'
+            'agnostic_nms', 'classes', 'tracker_settings', 'eval'
         }
 
         required_tracker_keys = {
@@ -234,10 +233,10 @@ class Tracker:
         if self.run_hota:
             print("\n--- Avvio Valutazione Automatica (HOTA) ---")
             original_subdirs = self.cfg['paths'].get('output_subdirs', [])
-            current_subdir = os.path.join(self.cfg_mode['test_name'], "_track")
+            current_subdir = os.path.join(self.cfg_mode['test_name'], "track")
             self.cfg['paths']['output_subdirs'] = [current_subdir]
-            evaluator = HotaEvaluator(self.cfg)
-            evaluator.run()
+            evaluator = Evaluator(self.cfg)
+            evaluator.run_hota()
             self.cfg['paths']['output_subdirs'] = original_subdirs
 
     def _draw_on_frame(self, img, det):
