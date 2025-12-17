@@ -1,14 +1,14 @@
 import os
 import sys
-import cv2
-import yaml
-import numpy as np
 import time
-import json
-from ultralytics import YOLO
-from tqdm import tqdm
+import yaml
+import cv2
 import traceback
 import random
+from ultralytics import YOLO
+from tqdm import tqdm
+from .common.io_manager import ReportManager
+from .common.vis_utils import Visualizer
 from .evaluator import Evaluator
 
 
@@ -21,42 +21,42 @@ class Tracker:
         print("Caricamento modello...")
         self.model = YOLO(self.cfg['paths']['model_weights'])
 
-        self.output_dir = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'], "track")
-        os.makedirs(self.output_dir, exist_ok=True)
+        # --- 1. Setup Output Manager (Gestisce cartelle e JSON) ---
+        base_out = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'], "track")
+        self.reporter = ReportManager(base_out)
 
+        # --- 2. Setup Visualizer (Gestisce OpenCV) ---
+        # Viene istanziato solo se il display è abilitato
+        self.enable_display = self.cfg_mode['display']
+        if self.enable_display:
+            self.vis = Visualizer(display_width=self.cfg_mode['display_width'])
+        else:
+            self.vis = None
+
+        # --- 3. Salvataggio Configurazione Iniziale nel JSON ---
+        self.reporter.update_json_section("configuration", self.cfg_mode)
+
+        # Configurazione parametri Tracker
         self.conf = self.cfg_mode['conf_threshold']
         self.iou = self.cfg_mode['iou_threshold']
-
-        self.tracker_yaml_path = self.cfg['paths'].get('temp_tracker_yaml', './temp_tracker.yaml')
-        os.makedirs(os.path.dirname(self.tracker_yaml_path), exist_ok=True)
-
-        self.display_width = self.cfg_mode['display_width']
-        self.enable_display = self.cfg_mode['display']
-
         self.max_video = self.cfg_mode.get('max_video', None)
         self.random_mode = self.cfg_mode['random']
         self.run_hota = self.cfg_mode['eval']
 
-        # --- Inizializzazione struttura dati per JSON ---
-        self.json_report_path = os.path.join(self.output_dir, "execution_report.json")
-        self.execution_stats = {
-            "configuration": self.cfg_mode,
-            "tracker_settings": self.cfg_mode.get('tracker_settings', {}),
-            "video_execution_times": {}  # Qui salveremo i tempi
-        }
-
+        # Generazione file YAML temporaneo per il tracker (specifico di Ultralytics)
+        self.tracker_yaml_path = self.cfg['paths'].get('temp_tracker_yaml', './temp_tracker.yaml')
+        os.makedirs(os.path.dirname(self.tracker_yaml_path), exist_ok=True)
         with open(self.tracker_yaml_path, 'w') as f:
             yaml.dump(self.cfg_mode['tracker_settings'], f, sort_keys=False)
-
         print(f"File configurazione tracker generato in: {self.tracker_yaml_path}")
 
     def _check_keys(self):
+        """Validazione chiavi di configurazione (Invariato)"""
         required_keys = {
             'test_name', 'conf_threshold', 'iou_threshold', 'display', 'display_width',
             'half', 'show', 'imgsz', 'stream', 'verbose', 'persist',
             'agnostic_nms', 'classes', 'tracker_settings', 'eval', 'random'
         }
-
         required_tracker_keys = {
             'tracker_type', 'track_high_thresh', 'track_low_thresh',
             'new_track_thresh', 'track_buffer', 'match_thresh',
@@ -65,9 +65,7 @@ class Tracker:
         }
 
         current_keys = set(self.cfg_mode.keys())
-
         if 'max_video' not in current_keys: current_keys.add('max_video')
-
         missing_keys = required_keys - current_keys
 
         if missing_keys:
@@ -81,12 +79,8 @@ class Tracker:
             print(f"\n[ERRORE CONFIG] In 'tracker_settings' mancano: {list(missing_tracker_keys)}")
             sys.exit(1)
 
-    @staticmethod
-    def _get_id_color(id_int):
-        np.random.seed(int(id_int))
-        return tuple(np.random.randint(0, 255, size=3).tolist())
-
     def get_video_list(self):
+        """Logica di selezione video (Invariato)"""
         test_dir = os.path.join(self.cfg['paths']['raw_data'], self.cfg['paths']['split'])
         if not os.path.exists(test_dir):
             print(f"ERRORE CRITICO: La cartella dati non esiste: {test_dir}")
@@ -100,7 +94,6 @@ class Tracker:
 
         if self.max_video is not None and isinstance(self.max_video, int):
             if self.max_video < len(all_video_folders):
-
                 if self.random_mode:
                     video_folders = random.sample(all_video_folders, self.max_video)
                     print(f"RANDOM MODE: Selezionati {len(video_folders)} video su {len(all_video_folders)} totali.")
@@ -108,17 +101,14 @@ class Tracker:
                     video_folders = all_video_folders[:self.max_video]
                     print(
                         f"SEQUENTIAL MODE: Selezionati i primi {len(video_folders)} video su {len(all_video_folders)} totali.")
-
                 return video_folders
             else:
-                print(f"Richiesti {self.max_video} video, ma ne esistono solo {len(all_video_folders)}. Presi tutti.")
                 return all_video_folders
         else:
-            print(f"Elaborazione di tutti i {len(all_video_folders)} video trovati.")
             return all_video_folders
 
     def track_video_generator(self, video_path_folder):
-
+        """Generatore di frame e detection (Invariato - Core Logic)"""
         video_path_img = os.path.join(self.cfg['paths']['raw_data'],
                                       self.cfg['paths']['split'],
                                       video_path_folder, 'img1')
@@ -160,10 +150,6 @@ class Tracker:
                 cls_ids = result.boxes.cls.int().cpu().numpy()
 
                 for i, track_id in enumerate(track_ids):
-                    # Logica rimossa per detection solo persone (gestita da config classes)
-                    # current_class = cls_ids[i]
-                    # if current_class == 0: continue
-
                     detections.append({
                         'track_id': track_id,
                         'cls_id': cls_ids[i],
@@ -180,79 +166,83 @@ class Tracker:
             print("Visualizzazione attiva: Premi 'q' sulla finestra video per interrompere.")
 
         video_folders = self.get_video_list()
-
         stop_requested = False
 
         for video_name in tqdm(video_folders, desc="Tracking Videos"):
-
             if stop_requested: break
 
             video_id = video_name.split('-')[1].split('.')[0]
-            output_txt = os.path.join(self.output_dir, f"tracking_{video_id}_{self.cfg['names']['team']}.txt")
+            output_filename = f"tracking_{video_id}_{self.cfg['names']['team']}.txt"
 
-            if os.path.exists(output_txt):
+            # Check esistenza file tramite il percorso gestito dal reporter
+            if os.path.exists(os.path.join(self.reporter.output_dir, output_filename)):
                 print(f"Skipping {video_name}, file esistente.")
                 continue
 
             window_name = f"Monitor - {video_name}"
-            window_created = False
-
-            f_out = open(output_txt, 'w')
-
-            # Start timer
             start_time = time.time()
+
+            # Buffer per accumulare le linee di un frame prima di scrivere
+            frame_lines = []
 
             try:
                 for frame_id, orig_img, detections in self.track_video_generator(video_name):
 
                     display_img = orig_img.copy() if self.enable_display else None
+                    frame_lines.clear()  # Pulisce buffer frame precedente
 
                     for det in detections:
+                        # 1. Preparazione dati per TXT
                         x_c, y_c, w, h = det['xywh']
                         x1 = x_c - (w / 2)
                         y1 = y_c - (h / 2)
 
                         line = f"{frame_id},{det['track_id']},{x1:.2f},{y1:.2f},{w:.2f},{h:.2f},{det['conf']:.2f},-1,-1,-1\n"
-                        f_out.write(line)
+                        frame_lines.append(line)
 
-                        if self.enable_display:
-                            self._draw_on_frame(display_img, det)
+                        # 2. Preparazione grafica (Delegata al Visualizer)
+                        if self.vis and display_img is not None:
+                            self.vis.draw_box(
+                                img=display_img,
+                                box_xyxy=det['xyxy'],
+                                track_id=det['track_id'],
+                                conf=det['conf']
+                            )
 
-                    f_out.flush()
+                    # 3. Scrittura su file (Delegata al Reporter - Append Mode)
+                    if frame_lines:
+                        self.reporter.save_txt_results(output_filename, frame_lines, append=True)
 
-                    if self.enable_display:
-                        if not window_created and display_img is not None:
-                            window_created = True
-
-                        if not self._show_frame(window_name, display_img):
+                    # 4. Visualizzazione (Delegata al Visualizer)
+                    if self.vis and display_img is not None:
+                        if not self.vis.show_frame(window_name, display_img):
                             print("\nInterruzione richiesta dall'utente.")
                             stop_requested = True
                             break
 
-                # Stop timer e salvataggio nel JSON
-                elapsed_time = time.time() - start_time
-                self.execution_stats["video_execution_times"][video_name] = round(elapsed_time, 4)
+                # --- Fine Video ---
+                elapsed_time = round(time.time() - start_time, 4)
 
-                # Scrittura incrementale del JSON (sovrascrittura)
-                with open(self.json_report_path, 'w') as f_json:
-                    json.dump(self.execution_stats, f_json, indent=4)
+                # Aggiornamento JSON Report (Delegato al Reporter)
+                self.reporter.update_json_section("video_execution_times", {video_name: elapsed_time})
 
             except Exception as e:
                 print(f"Errore durante il video {video_name}: {e}")
                 traceback.print_exc()
 
             finally:
-                f_out.close()
-                if self.enable_display and window_created:
+                # Chiusura finestra specifica video se aperta
+                if self.vis:
                     try:
                         cv2.destroyWindow(window_name)
                     except cv2.error:
                         pass
 
-        if self.enable_display:
-            cv2.destroyAllWindows()
+        # Chiusura globale finestre
+        if self.vis:
+            self.vis.close_windows()
 
-        print(f"\nReport esecuzione salvato in: {self.json_report_path}")
+        print(f"\nReport esecuzione salvato in: {self.reporter.json_path}")
         print("\n--- Tracking Completato ---")
 
         if self.run_hota:
@@ -260,32 +250,8 @@ class Tracker:
             original_subdirs = self.cfg['paths'].get('output_subdirs', [])
             current_subdir = os.path.join(self.cfg_mode['test_name'], "track")
             self.cfg['paths']['output_subdirs'] = [current_subdir]
+
             evaluator = Evaluator(self.cfg)
             evaluator.run_hota()
+
             self.cfg['paths']['output_subdirs'] = original_subdirs
-
-    def _draw_on_frame(self, img, det):
-        color = self._get_id_color(det['track_id'])
-        x1, y1, x2, y2 = map(int, det['xyxy'])
-
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-
-        cls_id = int(det['cls_id'])
-
-        label = f"ID:{det['track_id']} C:{cls_id} ({det['conf']:.2f})"
-
-        (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
-
-        cv2.rectangle(img, (x1, y1 - 20), (x1 + w_text, y1), color, -1)
-
-        cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-
-    def _show_frame(self, window_name, img):
-        h, w = img.shape[:2]
-        if h > 0 and w > 0:
-            aspect = h / w
-            d_h = int(self.display_width * aspect)
-            resized = cv2.resize(img, (self.display_width, d_h))
-            cv2.imshow(window_name, resized)
-            if cv2.waitKey(1) & 0xFF == ord('q'): return False
-        return True

@@ -4,9 +4,9 @@ import shutil
 import pandas as pd
 import cv2
 import yaml
-import configparser
 from tqdm import tqdm
 import json
+from .common.data_utils import GameInfoParser, GeometryUtils
 
 
 class DataManager:
@@ -16,9 +16,7 @@ class DataManager:
         self.raw_data_path = self.cfg['paths']['raw_data']
         self.yolo_dataset_path = self.cfg['paths']['yolo_dataset']
 
-
     def prepare_dataset(self):
-
         self._unzip_and_delete(self.raw_data_path, self.raw_data_path)
 
         subsets = ['train', 'test']
@@ -50,7 +48,6 @@ class DataManager:
         """
         print("--- Inizio generazione GT Behavior Analysis ---")
 
-        # 1. Caricamento ROI [cite: 95]
         roi_path = self.cfg['paths']['roi']
         if not os.path.exists(roi_path):
             print(f"Errore: File ROI non trovato in {roi_path}")
@@ -59,7 +56,6 @@ class DataManager:
         with open(roi_path, 'r') as f:
             rois = json.load(f)
 
-        # Assumiamo struttura standard raw_data -> train/test -> video_folder -> gt
         subsets = ['train', 'test']
 
         for subset in subsets:
@@ -80,112 +76,80 @@ class DataManager:
                 output_filename = f"behavior_{video_id_str}_gt.txt"
                 output_path = os.path.join(gt_folder, output_filename)
 
-                # 6. Check esistenza file per skip intelligente
                 if os.path.exists(output_path):
                     continue
 
                 if not os.path.exists(gt_txt_path):
                     continue
 
-                # 4. Identifica ID palla da ignorare usando gameinfo
-                id_map = self._parse_gameinfo(ini_path)
+                id_map = GameInfoParser.get_id_map(ini_path)
                 ball_ids = [k for k, v in id_map.items() if "ball" in v]
 
-                # Caricamento GT
                 try:
-                    # Colonne: frame_id, obj_id, x, y, w, h, conf, cls, vis, u
                     df = pd.read_csv(gt_txt_path, header=None)
                     df.columns = ['frame_id', 'obj_id', 'x', 'y', 'w', 'h', 'conf', 'cls', 'vis', 'u']
                 except Exception as e:
                     print(f"Errore lettura GT per {video_name}: {e}")
                     continue
 
-                # Necessario per dimensioni immagine (per denormalizzare ROI o normalizzare coordinate)
-                # Le specifiche dicono: coordinate ROI normalizzate [0,1]. [cite: 96]
-                # Coordinate GT sono assolute in pixel.
-                # Quindi serve dimensione immagine per convertire.
-
-                h_img, w_img = 1080, 1920  # Default fallback
+                # Recupero dimensioni immagine per normalizzazione/verifica ROI
+                h_img, w_img = 1080, 1920
                 if os.path.exists(img_dir):
                     images = os.listdir(img_dir)
                     if images:
-                        # Prendi la prima immagine valida
-                        first_img_path = os.path.join(img_dir, images[0])
-                        img = cv2.imread(first_img_path)
+                        img = cv2.imread(os.path.join(img_dir, images[0]))
                         if img is not None:
                             h_img, w_img = img.shape[:2]
 
-                # Preparazione ROI denormalizzate [cite: 97]
-                abs_rois = {}
-                for key, r in rois.items():
-                    # Mappiamo roi1 -> ID 1, roi2 -> ID 2
-                    rid = 1 if 'roi1' in key else 2
-                    abs_rois[rid] = {
-                        'x_min': r['x'] * w_img,
-                        'y_min': r['y'] * h_img,
-                        'x_max': (r['x'] + r['width']) * w_img,
-                        'y_max': (r['y'] + r['height']) * h_img
-                    }
-
-                # Elaborazione frame per frame
                 frames = sorted(df['frame_id'].unique())
 
                 with open(output_path, 'w') as f_out:
                     for frame_id in frames:
                         frame_data = df[df['frame_id'] == frame_id]
-
-                        counts = {1: 0, 2: 0}  # Contatori per region_id 1 e 2
+                        counts = {1: 0, 2: 0}
 
                         for _, row in frame_data.iterrows():
                             obj_id = int(row['obj_id'])
 
-                            # 4. Ignora palla
                             if obj_id in ball_ids:
                                 continue
 
-                            # Calcolo centro della base
-                            # x, y sono top-left. w, h sono width, height.
-                            # Base center x = x + w/2
-                            # Base center y = y + h (fondo del box)
+                            # 2. Conversione Coordinate per GeometryUtils
+                            # GT fornisce Top-Left (x, y), GeometryUtils si aspetta Center (cx, cy)
+                            # per calcolare correttamente i "piedi" (base_y).
+                            cx = row['x'] + (row['w'] / 2.0)
+                            cy = row['y'] + (row['h'] / 2.0)
 
-                            c_x = row['x'] + (row['w'] / 2.0)
-                            c_y = row['y'] + row['h']
+                            # Creiamo il box formato [cx, cy, w, h]
+                            box_xywh = [cx, cy, row['w'], row['h']]
 
-                            # Verifica appartenenza ROI
-                            for rid, r in abs_rois.items():
-                                if (r['x_min'] <= c_x <= r['x_max']) and (r['y_min'] <= c_y <= r['y_max']):
-                                    counts[rid] += 1
+                            # 3. Verifica inclusione usando GeometryUtils
+                            if GeometryUtils.is_in_roi(box_xywh, rois.get('roi1'), w_img, h_img):
+                                counts[1] += 1
+                            elif GeometryUtils.is_in_roi(box_xywh, rois.get('roi2'), w_img, h_img):
+                                counts[2] += 1
 
-                        # 5. Scrittura riga: frame_id, region_id, n_players [cite: 120]
-                        line1 = f"{int(frame_id)},1,{counts[1]}\n"
-                        line2 = f"{int(frame_id)},2,{counts[2]}\n"
-
-                        f_out.write(line1)
-                        f_out.write(line2)
-
-                        # 6. Flush memoria
+                        f_out.write(f"{int(frame_id)},1,{counts[1]}\n")
+                        f_out.write(f"{int(frame_id)},2,{counts[2]}\n")
                         f_out.flush()
 
         print("--- Generazione GT Behavior Completata ---\n")
 
     def _create_yolo_yaml(self):
+        """Crea il file dataset.yaml per YOLO."""
         yaml_path = os.path.join(self.yolo_dataset_path, 'dataset.yaml')
         abs_path = os.path.abspath(self.yolo_dataset_path)
 
         data = {
             'path': abs_path,
             'train': 'images/train',
-            'val': 'images/train',
+            'val': 'images/train',  # Default fallback
             'test': 'images/test',
             'nc': 4,
-            'names': {
-                0: 'player_uf',
-                1: 'goalkeeper',
-                2: 'player',
-                3: 'referee'
-            }
+            'names': {0: 'player_uf', 1: 'goalkeeper', 2: 'player', 3: 'referee'}
         }
 
+        # Gestione path validazione intelligente
         if not os.path.exists(os.path.join(abs_path, 'images', 'test')):
             if 'test' in data: del data['test']
 
@@ -200,10 +164,8 @@ class DataManager:
 
     @staticmethod
     def _unzip_and_delete(source_folder, output_folder):
-        if not os.path.exists(source_folder):
-            return
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder, exist_ok=True)
+        if not os.path.exists(source_folder): return
+        if not os.path.exists(output_folder): os.makedirs(output_folder, exist_ok=True)
 
         for item in os.listdir(source_folder):
             if item.endswith(".zip"):
@@ -216,27 +178,6 @@ class DataManager:
                 except Exception as e:
                     print(f"Errore zip {item}: {e}")
 
-    @staticmethod
-    def _parse_gameinfo(ini_path):
-        id_map = {}
-        if not os.path.exists(ini_path):
-            return id_map
-        try:
-            config = configparser.ConfigParser()
-            config.read(ini_path)
-            if 'Sequence' in config:
-                for key, val in config['Sequence'].items():
-                    if key.startswith('trackletid_'):
-                        try:
-                            obj_id = int(key.split('_')[1])
-                            label_desc = val.split(';')[0].lower().strip()
-                            id_map[obj_id] = label_desc
-                        except:
-                            continue
-        except Exception:
-            pass
-        return id_map
-
     def _convert_mot_to_yolo(self, source_dir, output_dir, sub_folder='train'):
         images_out = os.path.join(output_dir, 'images', sub_folder)
         labels_out = os.path.join(output_dir, 'labels', sub_folder)
@@ -248,8 +189,9 @@ class DataManager:
         for video_name in tqdm(video_folders, desc=f"Processando {sub_folder}"):
             video_path = os.path.join(source_dir, video_name)
 
+            # Utilizzo Parser condiviso
             ini_path = os.path.join(video_path, 'gameinfo.ini')
-            id_to_label = self._parse_gameinfo(ini_path)
+            id_to_label = GameInfoParser.get_id_map(ini_path)
 
             gt_path = os.path.join(video_path, 'gt', 'gt.txt')
             img_dir = os.path.join(video_path, 'img1')
@@ -269,16 +211,16 @@ class DataManager:
                 unique_name = f"{video_name}_frame_{int(frame_id):06d}"
                 label_file = os.path.join(labels_out, unique_name + '.txt')
 
-                if os.path.exists(label_file):
-                    continue
+                if os.path.exists(label_file): continue
 
+                # Gestione estensioni immagine
                 img_name_base = f"{int(frame_id):06d}"
                 src_img = os.path.join(img_dir, img_name_base + ".jpg")
                 if not os.path.exists(src_img):
                     src_img = os.path.join(img_dir, img_name_base + ".png")
-                if not os.path.exists(src_img):
-                    continue
+                if not os.path.exists(src_img): continue
 
+                # Lettura dimensione immagine necessaria per normalizzazione
                 img = cv2.imread(src_img)
                 if img is None: continue
                 h_img, w_img = img.shape[:2]
@@ -286,11 +228,10 @@ class DataManager:
                 yolo_lines = []
                 for _, row in group.iterrows():
                     obj_id = int(row['obj_id'])
-
                     label_str = id_to_label.get(obj_id, "unknown")
 
+                    # Logica Mapping Classi
                     final_class_id = -1
-
                     if "ball" in label_str:
                         final_class_id = 0
                     elif "goalkeeper" in label_str:
@@ -300,14 +241,15 @@ class DataManager:
                     elif "referee" in label_str:
                         final_class_id = 3
 
-                    if final_class_id == -1:
-                        continue
+                    if final_class_id == -1: continue
 
+                    # Conversione coordinate: TopLeft -> Center + Normalizzazione
                     x_c = (row['x'] + row['w'] / 2) / w_img
                     y_c = (row['y'] + row['h'] / 2) / h_img
                     w_n = row['w'] / w_img
                     h_n = row['h'] / h_img
 
+                    # Clamping [0, 1]
                     x_c = max(0, min(1, x_c))
                     y_c = max(0, min(1, y_c))
                     w_n = max(0, min(1, w_n))
@@ -319,6 +261,7 @@ class DataManager:
                     with open(label_file, 'w') as f:
                         f.write('\n'.join(yolo_lines))
 
+                    # Symlink o copia immagine
                     ext = os.path.splitext(src_img)[1]
                     dst_img = os.path.join(images_out, unique_name + ext)
 

@@ -1,64 +1,64 @@
 import os
+import time
 import json
-import time  # <--- IMPORT NECESSARIO
-from tqdm import tqdm
 import cv2
+from tqdm import tqdm
 from .tracker import Tracker
 from .evaluator import Evaluator
+from .common.io_manager import ReportManager
+from .common.vis_utils import Visualizer
+from .common.data_utils import GeometryUtils
 
 
 class BehaviorAnalyzer:
     def __init__(self, config, conf_mode):
         self.cfg = config
         self.conf_mode = conf_mode
+
+        # Inizializza il tracker (che gestisce modello e inferenza)
         self.tracker = Tracker(config, conf_mode)
 
-        self.output_dir = os.path.join(self.cfg['paths']['output_submission'], conf_mode['test_name'], "behavior")
-        os.makedirs(self.output_dir, exist_ok=True)
+        # --- 1. Setup Output Manager ---
+        base_out = os.path.join(self.cfg['paths']['output_submission'], conf_mode['test_name'], "behavior")
+        self.reporter = ReportManager(base_out)
+
+        # --- 2. Setup Visualizer ---
+        self.enable_display = self.conf_mode.get('display', False)
+        if self.enable_display:
+            self.vis = Visualizer(display_width=conf_mode['display_width'])
+        else:
+            self.vis = None
 
         self.run_eval = conf_mode.get('eval', False)
 
+        # Mappa colori specifica per la logica Behavior
         self.colors = {
-            'default': (0, 0, 255),
-            'roi1': (0, 255, 255),
-            'roi2': (255, 0, 255)
+            'default': (0, 0, 255),  # Rosso
+            'roi1': (0, 255, 255),  # Giallo
+            'roi2': (255, 0, 255)  # Magenta
         }
 
-        # --- Inizializzazione struttura dati per JSON ---
-        self.json_report_path = os.path.join(self.output_dir, "execution_report.json")
-        self.execution_stats = {
-            "configuration": self.conf_mode,
-            "video_execution_times": {}  # Qui salveremo i tempi
-        }
+        # Salvataggio configurazione iniziale
+        self.reporter.update_json_section("configuration", self.conf_mode)
 
     def _load_rois(self, video_folder):
+        """Carica le ROI specifiche per il video (o usa fallback)."""
+        # Nota: Qui mantengo la logica specifica del Behavior perché è business logic,
+        # non I/O generico.
         json_path = self.cfg['paths']['roi']
 
         if not os.path.exists(json_path):
-            # Fallback dummy se non trovato
             return {"roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
                     "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}}
 
-        with open(json_path, 'r') as f:
-            data = json.load(f)
-        return data
-
-    def _is_in_roi(self, box_xywh, roi, img_w, img_h):
-
-        x_c, y_c, w_box, h_box = box_xywh
-
-        base_x = x_c
-        base_y = y_c + (h_box / 2.0)
-
-        roi_x = roi['x'] * img_w
-        roi_y = roi['y'] * img_h
-        roi_w = roi['width'] * img_w
-        roi_h = roi['height'] * img_h
-
-        in_x = roi_x <= base_x <= (roi_x + roi_w)
-        in_y = roi_y <= base_y <= (roi_y + roi_h)
-
-        return in_x and in_y
+        try:
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+            return data
+        except Exception as e:
+            print(f"Errore caricamento ROI: {e}. Uso fallback.")
+            return {"roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
+                    "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}}
 
     def run(self):
         video_folders = self.tracker.get_video_list()
@@ -68,29 +68,28 @@ class BehaviorAnalyzer:
             if stop_execution: break
 
             video_id = video_name.split('-')[1].split('.')[0]
+            output_filename = f"behavior_{video_id}_{self.cfg['names']['team']}.txt"
 
-            window_name = f"Behavior - {video_name}"
-
-            rois_data = self._load_rois(video_name)
-            if not rois_data:
-                rois_data = {"roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
-                             "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}}
-
-            output_file = os.path.join(self.output_dir, f"behavior_{video_id}_{self.cfg['names']['team']}.txt")
-
-            if os.path.exists(output_file):
+            # Check file esistente tramite reporter
+            if os.path.exists(os.path.join(self.reporter.output_dir, output_filename)):
                 print(f"\nSkipping {video_name}, file esistente.")
                 continue
 
-            # Start timer per questo video
-            start_time = time.time()
+            window_name = f"Behavior - {video_name}"
 
-            with open(output_file, 'w') as f_out:
-                # Usa il generatore del Tracker
-                # Nota: track_video_generator non calcola il tempo internamente,
-                # quindi lo misuriamo qui avvolgendo il ciclo.
+            # Caricamento ROI
+            rois_data = self._load_rois(video_name)
+            if not rois_data:  # Fallback estremo
+                print("File di configurazione ROI non trovato")
+                break
+
+            start_time = time.time()
+            frame_lines = []
+
+            try:
                 for frame_id, img, detections in self.tracker.track_video_generator(video_name):
                     h_img, w_img = img.shape[:2]
+                    frame_lines.clear()
 
                     count_roi1 = 0
                     count_roi2 = 0
@@ -100,108 +99,73 @@ class BehaviorAnalyzer:
                     for det in detections:
                         assigned_color = self.colors['default']
 
-                        if self._is_in_roi(det['xywh'], rois_data.get('roi1'), w_img, h_img):
+                        if GeometryUtils.is_in_roi(det['xywh'], rois_data.get('roi1'), w_img, h_img):
                             count_roi1 += 1
                             assigned_color = self.colors['roi1']
 
-                        elif self._is_in_roi(det['xywh'], rois_data.get('roi2'), w_img, h_img):
+                        elif GeometryUtils.is_in_roi(det['xywh'], rois_data.get('roi2'), w_img, h_img):
                             count_roi2 += 1
                             assigned_color = self.colors['roi2']
 
-                        to_draw.append((det, assigned_color))
+                        if self.vis:
+                            to_draw.append((det, assigned_color))
 
-                    if self.tracker.enable_display:
+                    # --- 2. Preparazione Output TXT ---
+                    frame_lines.append(f"{frame_id},1,{count_roi1}\n")
+                    frame_lines.append(f"{frame_id},2,{count_roi2}\n")
+
+                    self.reporter.save_txt_results(output_filename, frame_lines, append=True)
+
+                    if self.vis:
                         current_counts = {'roi1': count_roi1, 'roi2': count_roi2}
-                        self._draw_rois_with_counts(img, rois_data, w_img, h_img, current_counts)
+                        for key, roi_def in rois_data.items():
+                            c_val = current_counts.get(key, 0)
+                            c_col = self.colors.get(key, (255, 255, 255))
+                            self.vis.draw_roi(img, roi_def, c_val, color=c_col, label_key=key.upper())
 
+                        # Disegna i box dei giocatori con il colore assegnato
                         for det, color in to_draw:
-                            self._draw_player_box(img, det, color)
+                            self.vis.draw_box(
+                                img=img,
+                                box_xyxy=det['xyxy'],
+                                track_id=det['track_id'],
+                                conf=det['conf'],
+                                color=color
+                            )
 
-                        if not self.tracker._show_frame(window_name, img):
+                        # Mostra frame
+                        if not self.vis.show_frame(window_name, img):
                             print("\nInterruzione richiesta dall'utente (Tasto Q).")
                             stop_execution = True
                             break
 
-                    f_out.write(f"{frame_id},1,{count_roi1}\n")
-                    f_out.write(f"{frame_id},2,{count_roi2}\n")
-                    f_out.flush()
+                # --- Fine Video ---
+                elapsed_time = round(time.time() - start_time, 4)
+                self.reporter.update_json_section("video_execution_times", {video_name: elapsed_time})
 
-            # Stop timer e calcolo durata
-            elapsed_time = time.time() - start_time
-            self.execution_stats["video_execution_times"][video_name] = round(elapsed_time, 4)
-
-            # Scrittura/Aggiornamento del file JSON
-            try:
-                with open(self.json_report_path, 'w') as f_json:
-                    json.dump(self.execution_stats, f_json, indent=4)
             except Exception as e:
-                print(f"Errore salvataggio JSON: {e}")
+                print(f"Errore durante behavior analysis di {video_name}: {e}")
 
-            if self.tracker.enable_display:
-                try:
-                    cv2.destroyWindow(window_name)
-                except cv2.error:
-                    pass
+            finally:
+                if self.vis:
+                    try:
+                        cv2.destroyWindow(window_name)
+                    except cv2.error:
+                        pass
 
-        if self.tracker.enable_display:
-            cv2.destroyAllWindows()
+        if self.vis:
+            self.vis.close_windows()
 
-        print(f"Behavior Analysis Completata. File salvati in {self.output_dir}")
-        print(f"Report esecuzione salvato in: {self.json_report_path}")
+        print(f"Behavior Analysis Completata. File salvati in {self.reporter.output_dir}")
+        print(f"Report esecuzione salvato in: {self.reporter.json_path}")
 
         if self.run_eval:
             print("\n--- Avvio Valutazione Automatica (nMAE) ---")
-
             original_subdirs = self.cfg['paths'].get('output_subdirs', [])
-
             current_subdir = os.path.join(self.conf_mode['test_name'], "behavior")
-
             self.cfg['paths']['output_subdirs'] = [current_subdir]
 
             evaluator = Evaluator(self.cfg)
             evaluator.run_behavior()
 
             self.cfg['paths']['output_subdirs'] = original_subdirs
-
-    def _draw_rois_with_counts(self, img, rois, w, h, counts):
-        for i, (key, r) in enumerate(rois.items()):
-            color = self.colors.get(key, (255, 255, 255))
-            x = int(r['x'] * w)
-            y = int(r['y'] * h)
-            rw = int(r['width'] * w)
-            rh = int(r['height'] * h)
-
-            cv2.rectangle(img, (x, y), (x + rw, y + rh), color, 2)
-
-            count_val = counts.get(key, 0)
-            label_text = f"{key.upper()}: {count_val}"
-            (text_w, text_h), baseline = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-
-            box_x1 = x
-            box_y1 = y - text_h - 10
-            box_x2 = x + text_w + 10
-            box_y2 = y
-            if box_y1 < 0:
-                box_y1 = y
-                box_y2 = y + text_h + 10
-
-            cv2.rectangle(img, (box_x1, box_y1), (box_x2, box_y2), color, -1)
-            cv2.putText(img, label_text, (box_x1 + 5, box_y2 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
-
-    def _draw_player_box(self, img, det, color):
-        x1, y1, x2, y2 = map(int, det['xyxy'])
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-
-        base_x = int(det['xywh'][0])
-        base_y = int(det['xywh'][1] + det['xywh'][3] / 2)
-        cv2.circle(img, (base_x, base_y), 4, color, -1)
-
-        track_id = det['track_id']
-        conf = det['conf']
-        label = f"ID:{track_id} {conf:.2f}"
-
-        (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(img, (x1, y1 - 20), (x1 + w_text, y1), color, -1)
-
-        text_color = (255, 255, 255) if color == (0, 0, 255) else (0, 0, 0)
-        cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
