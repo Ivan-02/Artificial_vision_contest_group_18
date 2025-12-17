@@ -3,6 +3,8 @@ import sys
 import cv2
 import yaml
 import numpy as np
+import time
+import json
 from ultralytics import YOLO
 from tqdm import tqdm
 import traceback
@@ -35,11 +37,18 @@ class Tracker:
         self.random_mode = self.cfg_mode['random']
         self.run_hota = self.cfg_mode['eval']
 
+        # --- Inizializzazione struttura dati per JSON ---
+        self.json_report_path = os.path.join(self.output_dir, "execution_report.json")
+        self.execution_stats = {
+            "configuration": self.cfg_mode,
+            "tracker_settings": self.cfg_mode.get('tracker_settings', {}),
+            "video_execution_times": {}  # Qui salveremo i tempi
+        }
+
         with open(self.tracker_yaml_path, 'w') as f:
             yaml.dump(self.cfg_mode['tracker_settings'], f, sort_keys=False)
 
         print(f"File configurazione tracker generato in: {self.tracker_yaml_path}")
-
 
     def _check_keys(self):
         required_keys = {
@@ -150,14 +159,10 @@ class Tracker:
                 confs = result.boxes.conf.cpu().numpy()
                 cls_ids = result.boxes.cls.int().cpu().numpy()
 
-
-
                 for i, track_id in enumerate(track_ids):
-
-                    current_class = cls_ids[i]
-
-                    if current_class == 0:
-                        continue
+                    # Logica rimossa per detection solo persone (gestita da config classes)
+                    # current_class = cls_ids[i]
+                    # if current_class == 0: continue
 
                     detections.append({
                         'track_id': track_id,
@@ -194,6 +199,9 @@ class Tracker:
 
             f_out = open(output_txt, 'w')
 
+            # Start timer
+            start_time = time.time()
+
             try:
                 for frame_id, orig_img, detections in self.track_video_generator(video_name):
 
@@ -221,6 +229,14 @@ class Tracker:
                             stop_requested = True
                             break
 
+                # Stop timer e salvataggio nel JSON
+                elapsed_time = time.time() - start_time
+                self.execution_stats["video_execution_times"][video_name] = round(elapsed_time, 4)
+
+                # Scrittura incrementale del JSON (sovrascrittura)
+                with open(self.json_report_path, 'w') as f_json:
+                    json.dump(self.execution_stats, f_json, indent=4)
+
             except Exception as e:
                 print(f"Errore durante il video {video_name}: {e}")
                 traceback.print_exc()
@@ -236,6 +252,7 @@ class Tracker:
         if self.enable_display:
             cv2.destroyAllWindows()
 
+        print(f"\nReport esecuzione salvato in: {self.json_report_path}")
         print("\n--- Tracking Completato ---")
 
         if self.run_hota:

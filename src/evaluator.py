@@ -4,6 +4,8 @@ import pandas as pd
 from scipy.optimize import linear_sum_assignment
 from collections import defaultdict
 import re
+import json  # <--- IMPORT NECESSARIO
+
 
 class Evaluator:
     def __init__(self, config):
@@ -15,11 +17,6 @@ class Evaluator:
         self.team_name = self.cfg['names']['team']  # Es. 18
 
     def _build_gt_map(self, mode):
-        """
-        Scansiona la directory GT e costruisce una mappa {video_id: full_path_to_gt_file}.
-        mode='behavior': cerca behavior_XX_gt.txt
-        mode='tracking': cerca gt.txt e deduce l'ID dalla cartella (es. SNMOT-01 -> 01)
-        """
         gt_map = {}
         if not os.path.exists(self.gt_base_dir):
             return gt_map
@@ -29,29 +26,20 @@ class Evaluator:
             if not os.path.isdir(gt_folder_path):
                 continue
 
-            # --- LOGICA BEHAVIOR ---
             if mode == 'behavior':
-                # Cerca file specifici: behavior_XX_gt.txt
                 for f in os.listdir(gt_folder_path):
                     if f.startswith("behavior_") and f.endswith("_gt.txt"):
                         parts = f.split('_')
                         if len(parts) >= 3:
-                            # behavior_XX_gt.txt -> ID è parts[1]
                             vid_id = parts[1]
                             gt_map[vid_id] = os.path.join(gt_folder_path, f)
 
-            # --- LOGICA TRACKING (HOTA) ---
             elif mode == 'tracking':
-                # Cerca file standard: gt.txt
                 if 'gt.txt' in os.listdir(gt_folder_path):
-                    # Estrae l'ID dal nome della cartella (es. SNMOT-01 -> 01)
-                    # Usiamo una regex per catturare la parte numerica finale o l'intero ID
-                    # Fallback semplice: split('-')[-1] se c'è un trattino, altrimenti tutto il nome
                     match = re.search(r'(\d+)$', video_folder)
                     if match:
                         vid_id = match.group(1)
                     else:
-                        # Fallback se non trova numeri alla fine (es. "VideoA")
                         vid_id = video_folder
 
                     gt_map[vid_id] = os.path.join(gt_folder_path, 'gt.txt')
@@ -59,10 +47,6 @@ class Evaluator:
         return gt_map
 
     def run_behavior(self):
-        """
-        Calcola la metrica nMAE per il task di Behavior Analysis.
-        Formula nMAE: (10 - min(10, MAE)) / 10
-        """
         print("\n" + "=" * 60)
         print("AVVIO VALUTAZIONE: BEHAVIOR ANALYSIS (nMAE)")
         print("=" * 60)
@@ -75,6 +59,20 @@ class Evaluator:
             pred_dir = os.path.join(self.base_output_dir, subdir)
             metrics_dir = pred_dir
             os.makedirs(metrics_dir, exist_ok=True)
+
+            # --- SETUP LETTURA E AGGIORNAMENTO JSON (BEHAVIOR) ---
+            json_report_path = os.path.join(metrics_dir, "execution_report.json")
+            json_data = {}
+            if os.path.exists(json_report_path):
+                try:
+                    with open(json_report_path, 'r') as f:
+                        json_data = json.load(f)
+                except Exception as e:
+                    print(f"Attenzione: Impossibile leggere il JSON esistente: {e}")
+
+            if "video_scores" not in json_data:
+                json_data["video_scores"] = {}
+            # -----------------------------------------------------
 
             if not os.path.exists(pred_dir):
                 print(f"Errore: Cartella predizioni non trovata: {pred_dir}")
@@ -109,7 +107,6 @@ class Evaluator:
                 pred_path = os.path.join(pred_dir, pred_file)
 
                 # Caricamento dati
-                # Format: frame_id, region_id, n_players
                 try:
                     df_gt = pd.read_csv(gt_path, header=None, names=['frame_id', 'region_id', 'n_players'])
                     df_pred = pd.read_csv(pred_path, header=None, names=['frame_id', 'region_id', 'n_players'])
@@ -118,19 +115,16 @@ class Evaluator:
                     continue
 
                 # Merge per allineare frame e region.
-                # Usiamo 'left' sul GT perché dobbiamo valutare tutti i frame annotati.
-                # Se manca la predizione, assumiamo 0 o NaN (qui gestiamo i NaN).
                 merged = pd.merge(df_gt, df_pred, on=['frame_id', 'region_id'], how='left', suffixes=('_gt', '_pred'))
-
-                # Riempiamo eventuali buchi nelle predizioni con 0 (o gestisci diversamente se necessario)
                 merged['n_players_pred'] = merged['n_players_pred'].fillna(0)
-
-                # Calcolo errore assoluto per ogni riga
                 merged['abs_err'] = abs(merged['n_players_gt'] - merged['n_players_pred'])
 
                 vid_samples = len(merged)
                 vid_err = merged['abs_err'].sum()
                 vid_mae = vid_err / vid_samples if vid_samples > 0 else 0
+
+                # Calcolo nMAE specifico per il video
+                vid_nmae = (10 - min(10, vid_mae)) / 10
 
                 video_stats.append({
                     'VideoID': video_id,
@@ -139,19 +133,39 @@ class Evaluator:
                     'MAE': round(vid_mae, 4)
                 })
 
+                # --- AGGIORNAMENTO JSON PER QUESTO VIDEO ---
+                # Logica per trovare la chiave corretta (es. 'test-01' da '01')
+                json_key_match = None
+                if "video_execution_times" in json_data:
+                    for key in json_data["video_execution_times"].keys():
+                        if video_id in key:
+                            json_key_match = key
+                            break
+
+                if not json_key_match:
+                    json_key_match = video_id
+
+                # Assicuriamoci che la chiave esista in video_scores
+                if json_key_match not in json_data["video_scores"]:
+                    json_data["video_scores"][json_key_match] = {}
+
+                # Aggiungiamo le metriche
+                json_data["video_scores"][json_key_match]["MAE"] = round(vid_mae, 4)
+                json_data["video_scores"][json_key_match]["nMAE"] = round(vid_nmae, 4)
+                # -------------------------------------------
+
                 total_abs_error += vid_err
                 total_samples += vid_samples
 
             # Calcolo MAE Globale e nMAE finale
             if total_samples > 0:
                 global_mae = total_abs_error / total_samples
-                # Formula da pdf: nMAE = (10 - min(10, MAE)) / 10
                 nmae = (10 - min(10, global_mae)) / 10
             else:
                 global_mae = 0.0
                 nmae = 0.0
 
-            # Salvataggio Report
+            # Salvataggio Report CSV
             df_res = pd.DataFrame(video_stats)
             avg_row = {
                 'VideoID': 'GLOBAL',
@@ -164,8 +178,17 @@ class Evaluator:
             csv_path = os.path.join(metrics_dir, 'behavior_metrics.csv')
             df_res.to_csv(csv_path, index=False)
 
+            # --- SALVATAGGIO JSON FINALE ---
+            try:
+                with open(json_report_path, 'w') as f:
+                    json.dump(json_data, f, indent=4)
+                print(f"Report JSON aggiornato con nMAE salvato: {json_report_path}")
+            except Exception as e:
+                print(f"Errore nel salvataggio del JSON: {e}")
+            # -------------------------------
+
             print(f"[{subdir}] GLOBAL MAE: {global_mae:.4f} | nMAE SCORE: {nmae:.4f}")
-            print(f"Report salvato: {csv_path}")
+            print(f"Report CSV salvato: {csv_path}")
 
     def run_hota(self):
         print("\n" + "=" * 60)
@@ -180,6 +203,20 @@ class Evaluator:
             pred_dir = os.path.join(self.base_output_dir, subdir)
             metrics_dir = pred_dir
             os.makedirs(metrics_dir, exist_ok=True)
+
+            # --- SETUP LETTURA E AGGIORNAMENTO JSON ---
+            json_report_path = os.path.join(metrics_dir, "execution_report.json")
+            json_data = {}
+            if os.path.exists(json_report_path):
+                try:
+                    with open(json_report_path, 'r') as f:
+                        json_data = json.load(f)
+                except Exception as e:
+                    print(f"Attenzione: Impossibile leggere il JSON esistente: {e}")
+
+            if "video_scores" not in json_data:
+                json_data["video_scores"] = {}
+            # -------------------------------------------
 
             all_videos_metrics = []
             global_stats = {
@@ -208,12 +245,10 @@ class Evaluator:
                 try:
                     vid_id_str = video_name_clean.split("_")[1]
                 except IndexError:
-                    # Fallback se il nome non ha underscore
                     vid_id_str = video_name_clean
 
                 pred_path = os.path.join(pred_dir, pred_file)
 
-                # 2. Lookup immediato del GT Path
                 if vid_id_str in gt_map:
                     gt_path = gt_map[vid_id_str]
                 else:
@@ -236,6 +271,31 @@ class Evaluator:
 
                 print(
                     f"[{subdir}] Video: {vid_id_str:<10} | HOTA: {hota_vid:.4f} | DetA: {deta_vid:.4f} | AssA: {assa_vid:.4f}")
+
+                # --- AGGIORNAMENTO JSON ---
+                # Cerchiamo la chiave corretta nel JSON (che usa nomi tipo 'test-01')
+                # confrontandola con vid_id_str ('01')
+                json_key_match = None
+                if "video_execution_times" in json_data:
+                    for key in json_data["video_execution_times"].keys():
+                        # Se l'ID (es. '01') è contenuto nella chiave (es. 'test-01')
+                        if vid_id_str in key:
+                            json_key_match = key
+                            break
+
+                # Se non trovato nel dizionario tempi, usiamo l'ID come chiave
+                if not json_key_match:
+                    json_key_match = vid_id_str
+
+                if json_key_match not in json_data["video_scores"]:
+                    json_data["video_scores"][json_key_match] = {}
+
+                json_data["video_scores"][json_key_match].update({
+                    "HOTA": round(hota_vid, 4),
+                    "DetA": round(deta_vid, 4),
+                    "AssA": round(assa_vid, 4)
+                })
+                # --------------------------
 
                 video_row = {
                     'Video': vid_id_str,
@@ -280,7 +340,17 @@ class Evaluator:
                 df_final = pd.concat([df, pd.DataFrame([avg_row])], ignore_index=True)
                 csv_path = os.path.join(metrics_dir, 'hota_metrics.csv')
                 df_final.to_csv(csv_path, index=False)
-                print(f"Report HOTA salvato: {os.path.abspath(csv_path)}")
+
+                # --- SALVATAGGIO JSON FINALE ---
+                try:
+                    with open(json_report_path, 'w') as f:
+                        json.dump(json_data, f, indent=4)
+                    print(f"Report JSON aggiornato salvato: {json_report_path}")
+                except Exception as e:
+                    print(f"Errore nel salvataggio del JSON: {e}")
+                # -------------------------------
+
+                print(f"Report HOTA CSV salvato: {os.path.abspath(csv_path)}")
 
             print("-" * 60)
             print(f"RISULTATO {subdir}: HOTA {final_hota:.4f}")
