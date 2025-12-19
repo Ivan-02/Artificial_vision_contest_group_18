@@ -1,4 +1,4 @@
-project_name: "SoccerNet_YOLO8_X"
+project_name: "SoccerNet_YOLO11_X"
 
 device: 0
 
@@ -8,10 +8,11 @@ names:
 paths:
   raw_data: "./dataset/raw_data"
   roi: "./configs/roi.json"
-  split: "train"
+  split: "test"
   yolo_dataset: "./dataset/yolo"
-  model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
+  #model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
+  model_weights: "./weights/yolo11x.pt"
   output_submission: "./output/submissions"
-  output_subdirs: ["track_3/behavior"]
+  output_subdirs: ["track_yolo11x/track"]
   output_val: "./output/validation"
   temp_tracker_yaml: "./output/temp_botsort.yaml"
