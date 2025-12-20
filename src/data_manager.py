@@ -16,28 +16,39 @@ class DataManager:
         self.raw_data_path = self.cfg['paths']['raw_data']
         self.yolo_dataset_path = self.cfg['paths']['yolo_dataset']
 
+        # Non stampiamo nulla nell'init per non sporcare se la classe viene solo istanziata.
+        # Le stampe avverranno chiamando prepare_dataset.
+
     def prepare_dataset(self):
+        print(f"\n[DataManager] {'=' * 50}")
+        print("[DataManager] AVVIO: PREPARAZIONE DATASET & FORMATTING")
+        print(f"[DataManager] {'=' * 50}")
+        print(f"[DataManager] Raw Data Path : {self.raw_data_path}")
+        print(f"[DataManager] YOLO Output   : {self.yolo_dataset_path}")
+
+        # --- FASE 1: UNZIP ---
+        print("\n[DataManager] [1/7] Estrazione archivi ZIP...")
         self._unzip_and_delete(self.raw_data_path, self.raw_data_path)
 
-        # --- NOVITÀ: Rinomina cartelle e copia ROI PRIMA della generazione del dataset ---
-
+        # --- FASE 2: RENAME FOLDERS ---
         # 1. Rinomina le cartelle NSMOT-XX -> XX
-        # È fondamentale farlo PRIMA della conversione YOLO affinché i nomi dei file
-        # nel dataset finale siano puliti (es. "01_frame_00.txt" invece di "NSMOT-01_frame...")
+        print("\n[DataManager] [2/7] Standardizzazione nomi cartelle...")
         self._rename_video_folders()
 
+        # --- FASE 3: DISTRIBUZIONE ROI ---
         # 2. Distribuzione del file roi.json nelle sottocartelle
+        print("\n[DataManager] [3/7] Distribuzione configurazioni ROI...")
         self._distribute_roi_json()
 
-        # --------------------------------------------------------------------------------
-
+        # --- FASE 4: CONVERSIONE YOLO ---
+        print("\n[DataManager] [4/7] Conversione formato MOT -> YOLO...")
         subsets = ['train', 'test']
         found_any = False
 
         for subset in subsets:
             subset_path = os.path.join(self.raw_data_path, subset)
             if os.path.exists(subset_path):
-                print(f"Trovato subset: {subset}. Inizio conversione...")
+                print(f"[DataManager]       Trovato subset: '{subset}'")
                 found_any = True
                 self._convert_mot_to_yolo(
                     source_dir=subset_path,
@@ -46,26 +57,33 @@ class DataManager:
                 )
 
         if not found_any:
-            print("Nessuna sottocartella standard trovata. Tento conversione nella root...")
+            print("[DataManager] [!] Nessuna sottocartella standard (train/test) trovata.")
+            print("[DataManager]     Tento conversione nella root come 'train'...")
             self._convert_mot_to_yolo(self.raw_data_path, self.yolo_dataset_path, sub_folder='train')
 
+        # --- FASE 5: CREAZIONE YAML ---
+        print("\n[DataManager] [5/7] Generazione dataset.yaml...")
         self._create_yolo_yaml()
 
-        print("---Preparazione behavior GT")
+        # --- FASE 6: GENERAZIONE BEHAVIOR GT ---
+        print("\n[DataManager] [6/7] Generazione Ground Truth per Behavior Analysis...")
         self.prepare_behavior_gt()
 
-        print("---Rimozione classe ball dalla GT")
+        # --- FASE 7: CLEANING (Remove Ball) ---
+        print("\n[DataManager] [7/7] Pulizia classi (Rimozione 'Ball' dalla GT)...")
         self.remove_ball_from_all_gt()
 
-        print("--- Preparazione Dataset Completata ---\n")
+        print(f"\n[DataManager] {'=' * 50}")
+        print("[DataManager] [✔] PREPARAZIONE DATASET COMPLETATA")
+        print(f"[DataManager] {'=' * 50}\n")
 
     def rename_video_folders(self):
         """
         Scansiona le cartelle train/test e rinomina le cartelle video
         da 'SNMOT-XX' a 'XX'.
         """
-        print("--- Standardizzazione nomi cartelle video (SNMOT-XX -> XX) ---")
         subsets = ['train', 'test']
+        count = 0
 
         for subset in subsets:
             subset_path = os.path.join(self.raw_data_path, subset)
@@ -85,11 +103,16 @@ class DataManager:
                         # Evita sovrascritture se la cartella esiste già
                         if not os.path.exists(new_path):
                             os.rename(folder_path, new_path)
-                            print(f"Rinominato: {folder_name} -> {new_name}")
+                            count += 1
                         else:
-                            print(f"Warning: Impossibile rinominare {folder_name}, {new_name} esiste già.")
+                            print(f"[DataManager] [WARN] Impossibile rinominare {folder_name}, {new_name} esiste già.")
                     except IndexError:
-                        print(f"Skipping format non atteso: {folder_name}")
+                        print(f"[DataManager] [WARN] Skipping format non atteso: {folder_name}")
+
+        if count > 0:
+            print(f"[DataManager]       Rinominati {count} video.")
+        else:
+            print(f"[DataManager]       Nessuna cartella da rinominare trovata.")
 
     def _distribute_roi_json(self):
         """
@@ -97,17 +120,17 @@ class DataManager:
         1. In ogni sottocartella (train/test).
         2. All'interno di ogni cartella video in train/test.
         """
-        print("--- Distribuzione file ROI.json ---")
         source_roi = os.path.join('./configs', 'roi.json')  # Path relativo come richiesto
         # Fallback se non lo trova nel path relativo, prova a usare config se definito
         if not os.path.exists(source_roi) and 'roi' in self.cfg['paths']:
             source_roi = self.cfg['paths']['roi']
 
         if not os.path.exists(source_roi):
-            print(f"Errore: File ROI sorgente non trovato in {source_roi}")
+            print(f"[DataManager] [ERROR] File ROI sorgente non trovato in {source_roi}")
             return
 
         subsets = ['train', 'test']
+        count = 0
 
         for subset in subsets:
             subset_path = os.path.join(self.raw_data_path, subset)
@@ -124,8 +147,9 @@ class DataManager:
                 video_path = os.path.join(subset_path, video_name)
                 dst_video = os.path.join(video_path, 'roi.json')
                 shutil.copy(source_roi, dst_video)
+                count += 1
 
-        print("Distribuzione ROI completata.")
+        print(f"[DataManager]       ROI distribuito in {count} cartelle video.")
 
     def prepare_behavior_gt(self):
         """
@@ -133,11 +157,9 @@ class DataManager:
         Input: ROI json (self.cfg['paths']['roi'])
         Output: behavior_XX_gt.txt nella cartella gt di ogni video.
         """
-        print("--- Inizio generazione GT Behavior Analysis ---")
-
         roi_path = self.cfg['paths']['roi']
         if not os.path.exists(roi_path):
-            print(f"Errore: File ROI non trovato in {roi_path}")
+            print(f"[DataManager] [ERROR] File ROI non trovato in {roi_path}")
             return
 
         with open(roi_path, 'r') as f:
@@ -152,7 +174,8 @@ class DataManager:
 
             video_folders = [f for f in os.listdir(subset_path) if os.path.isdir(os.path.join(subset_path, f))]
 
-            for video_name in tqdm(video_folders, desc=f"Generazione GT Behavior {subset}"):
+            # TQDM gestisce la barra, printiamo errori solo se necessario
+            for video_name in tqdm(video_folders, desc=f"[DataManager] Gen Behavior {subset}", unit="vid"):
                 video_path = os.path.join(subset_path, video_name)
                 gt_folder = os.path.join(video_path, 'gt')
                 gt_txt_path = os.path.join(gt_folder, 'gt.txt')
@@ -175,7 +198,7 @@ class DataManager:
                     df = pd.read_csv(gt_txt_path, header=None)
                     df.columns = ['frame_id', 'obj_id', 'x', 'y', 'w', 'h', 'conf', 'cls', 'vis', 'u']
                 except Exception as e:
-                    print(f"Errore lettura GT per {video_name}: {e}")
+                    tqdm.write(f"[DataManager] [ERROR] Errore lettura GT per {video_name}: {e}")
                     continue
 
                 # Recupero dimensioni immagine per normalizzazione/verifica ROI
@@ -219,8 +242,6 @@ class DataManager:
                         f_out.write(f"{int(frame_id)},2,{counts[2]}\n")
                         f_out.flush()
 
-        print("--- Generazione GT Behavior Completata ---\n")
-
     def _create_yolo_yaml(self):
         """Crea il file dataset.yaml per YOLO."""
         yaml_path = os.path.join(self.yolo_dataset_path, 'dataset.yaml')
@@ -246,23 +267,28 @@ class DataManager:
 
         with open(yaml_path, 'w') as f:
             yaml.dump(data, f, sort_keys=False)
-        print(f"File di configurazione YOLO creato: {yaml_path}")
+        print(f"[DataManager]       YAML Creato: {os.path.basename(yaml_path)}")
 
     @staticmethod
     def _unzip_and_delete(source_folder, output_folder):
         if not os.path.exists(source_folder): return
         if not os.path.exists(output_folder): os.makedirs(output_folder, exist_ok=True)
 
+        found_zip = False
         for item in os.listdir(source_folder):
             if item.endswith(".zip"):
+                found_zip = True
                 zip_path = os.path.join(source_folder, item)
-                print(f"Estraendo: {item}...")
+                print(f"[DataManager]       Estraendo: {item}...")
                 try:
                     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                         zip_ref.extractall(output_folder)
                     os.remove(zip_path)
                 except Exception as e:
-                    print(f"Errore zip {item}: {e}")
+                    print(f"[DataManager] [ERROR] Errore zip {item}: {e}")
+
+        if not found_zip:
+            print("[DataManager]       Nessun file .zip trovato, procedo.")
 
     def _convert_mot_to_yolo(self, source_dir, output_dir, sub_folder='train'):
         images_out = os.path.join(output_dir, 'images', sub_folder)
@@ -272,7 +298,7 @@ class DataManager:
 
         video_folders = [f for f in os.listdir(source_dir) if os.path.isdir(os.path.join(source_dir, f))]
 
-        for video_name in tqdm(video_folders, desc=f"Processando {sub_folder}"):
+        for video_name in tqdm(video_folders, desc=f"[DataManager] Convert {sub_folder}", unit="vid"):
             video_path = os.path.join(source_dir, video_name)
 
             # Utilizzo Parser condiviso
@@ -368,8 +394,6 @@ class DataManager:
         2. Se trova 'gt.txt.bak', SALTA il video (già processato).
         3. Se non lo trova, rimuove la palla e crea il backup.
         """
-        print("--- AVVIO RIMOZIONE PALLA (con skip dei già processati) ---")
-
         subsets = ['train', 'test']
         total_modified = 0
         total_skipped = 0
@@ -382,7 +406,7 @@ class DataManager:
 
             video_folders = [f for f in os.listdir(subset_path) if os.path.isdir(os.path.join(subset_path, f))]
 
-            for video_name in tqdm(video_folders, desc=f"Elaborazione {subset}"):
+            for video_name in tqdm(video_folders, desc=f"[DataManager] Cleaning {subset}", unit="vid"):
                 video_path = os.path.join(subset_path, video_name)
                 gt_path = os.path.join(video_path, 'gt', 'gt.txt')
                 backup_path = gt_path + ".bak"  # Percorso del backup
@@ -423,10 +447,11 @@ class DataManager:
                         pass
 
                 except Exception as e:
-                    print(f"Errore su {video_name}: {e}")
+                    tqdm.write(f"[DataManager] [ERROR] Errore su {video_name}: {e}")
                     total_errors += 1
 
-        print("\n--- OPERAZIONE COMPLETATA ---")
-        print(f"Video modificati ora: {total_modified}")
-        print(f"Video saltati (già fatti): {total_skipped}")
-        print(f"Errori: {total_errors}")
+        print(f"[DataManager]       Statistiche Pulizia:")
+        print(f"[DataManager]       - Modificati: {total_modified}")
+        print(f"[DataManager]       - Già Processati: {total_skipped}")
+        if total_errors > 0:
+            print(f"[DataManager]       - Errori: {total_errors}")

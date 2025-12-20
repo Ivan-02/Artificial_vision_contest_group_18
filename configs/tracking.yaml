@@ -1,31 +1,70 @@
-test_name: "track_train"
+test_name: "track_prova_nuovo_eval"
 eval: True
-conf_threshold: 0.5
+single_cls: true
+specific_video: 192
+conf_threshold: 0.2
 iou_threshold: 0.7
-display: False
+display: true
 display_width: 1280
 half: True
 show: False
-imgsz: 640
+imgsz: 1088
 stream: True
 verbose: False
 persist: True
 agnostic_nms: True
-classes: [1,2,3]
+classes: [0]
 random: False
-max_video: 49
+max_video: 2
+
+field_det_settings:
+    debug: true
+    debug_mosaic: false
+
+    # Range Colore (HSV)
+    hsv_lower: [35, 27, 40]
+    hsv_upper: [95, 200, 200]
+
+    # Parametri Lisciamento e Morfologia
+    alpha_smooth: 0.7
+    kernel_erode_size: 18
+    kernel_dilate_size: 13
+    kernel_close_size: 30
+    morph_iterations: 2
+    binary_threshold: 100
+    min_area_ratio: 0.01
+    poly_epsilon: 0.01
+
+    # Logica di Filtraggio Giocatori (Generale)
+    pixel_check_radius: 5
+    pixel_check_ratio: 0.1
+    bottom_zone_ratio: 0.80   # Zona bassa (es. ultimi 20% dello schermo)
+    strong_conf_thresh: 0.75  # Se confidenza alta, siamo più permissivi
+    safe_zone_dist: 30        # Pixel dentro il campo per essere "sicuri"
+
+    # Margine in pixel dal bordo inferiore per considerare un giocatore "tagliato"
+    clipping_margin: 5
+
+    # Offset in pixel per controllare il verde sopra i piedi se "tagliato"
+    pixel_check_offset: 10
+
+    # Soglie di tolleranza distanza (PointPolygonTest):
+    # Valori negativi = tolleranza fuori dal bordo, Positivi = deve essere dentro
+    thresh_clipping: -5.0     # Molto permissivo se tocca il fondo
+    thresh_bottom: 5.0        # Più severo nella zona bassa (deve essere un po' dentro)
+    thresh_standard: -2.0     # Standard per il resto del campo (leggera tolleranza)
 
 tracker_settings:
-    tracker_type: botsort
-    track_high_thresh: 0.7
-    track_low_thresh: 0.50
-    new_track_thresh: 0.8
+    tracker_type: "botsort"
+    track_high_thresh: 0.35
+    track_low_thresh: 0.2
+    new_track_thresh: 0.35
     track_buffer: 150
-    match_thresh: 0.8
-    gmc_method: sparseOptFlow
+    match_thresh: 0.9
+    gmc_method: "sparseOptFlow"
     proximity_thresh: 0.70
     appearance_thresh: 0.30
     with_reid: False
     fuse_score: True
-    reid_model: osnet_x0_25_msmt17.pt
+    reid_model: "osnet_x0_25_msmt17.pt"
     model: auto

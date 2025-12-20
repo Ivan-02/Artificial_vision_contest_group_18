@@ -16,24 +16,34 @@ class BehaviorAnalyzer:
         self.cfg = config
         self.conf_mode = conf_mode
 
+        print(f"\n[BehaviorAnalyzer] {'=' * 50}")
+        print("[BehaviorAnalyzer] INIZIALIZZAZIONE PIPELINE")
+        print(f"[BehaviorAnalyzer] {'=' * 50}")
+
         # Inizializza il tracker (che gestisce modello e inferenza)
         self.tracker = Tracker(config, conf_mode)
 
         # --- 1. Setup Output Manager ---
         base_out = os.path.join(self.cfg['paths']['output_submission'], conf_mode['test_name'], "behavior")
         self.reporter = ReportManager(base_out)
+        print(f"[BehaviorAnalyzer] [INIT] Output directory: {base_out}")
 
         # --- 2. Setup Visualizer ---
         self.enable_display = self.conf_mode.get('display', False)
         if self.enable_display:
+            print(f"[BehaviorAnalyzer] [INIT] Visualizzazione: ATTIVA (Width: {self.conf_mode['display_width']}px)")
             self.vis = Visualizer(display_width=conf_mode['display_width'])
         else:
+            print(f"[BehaviorAnalyzer] [INIT] Visualizzazione: DISATTIVA")
             self.vis = None
 
         if FieldFilter:
-            self.field_filter = FieldFilter(debug=self.enable_display)
+            field_settings = self.conf_mode.get('field_det_settings', {})
+            self.field_filter = FieldFilter(settings=field_settings)
+            print(f"[BehaviorAnalyzer] [INIT] FieldFilter: Caricato")
         else:
             self.field_filter = None
+            print(f"[BehaviorAnalyzer] [INIT] FieldFilter: Non disponibile")
 
         self.run_eval = conf_mode.get('eval', False)
 
@@ -44,40 +54,52 @@ class BehaviorAnalyzer:
             'roi2': (255, 0, 255)  # Magenta
         }
 
-        # Salvataggio configurazione iniziale
         self.reporter.update_json_section("configuration", self.conf_mode)
 
     def _load_rois(self, video_folder):
         """Carica le ROI specifiche per il video (o usa fallback)."""
-        # Nota: Qui mantengo la logica specifica del Behavior perché è business logic,
-        # non I/O generico.
         json_path = self.cfg['paths']['roi']
-
+        fallback = {
+            "roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
+            "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}
+        }
         if not os.path.exists(json_path):
-            return {"roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
-                    "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}}
-
+            return fallback
         try:
             with open(json_path, 'r') as f:
                 data = json.load(f)
             return data
         except Exception as e:
-            print(f"Errore caricamento ROI: {e}. Uso fallback.")
-            return {"roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
-                    "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}}
+            tqdm.write(f"[BehaviorAnalyzer] [WARN] Errore caricamento ROI: {e}. Uso fallback.")
+            return fallback
 
     def run(self):
-        video_folders = self.tracker.get_video_list()
-        stop_execution = False
+        print(f"\n[BehaviorAnalyzer] {'=' * 50}")
+        print("[BehaviorAnalyzer] AVVIO: BEHAVIOR ANALYSIS")
+        print(f"[BehaviorAnalyzer] {'=' * 50}")
+        if self.enable_display:
+            print("[BehaviorAnalyzer] [INFO] Premi 'q' sulla finestra video per interrompere l'analisi.")
 
-        for video_name in tqdm(video_folders, desc="Behavior Analysis"):
+        video_folders = self.tracker.get_video_list()
+
+        if not video_folders:
+            print("[BehaviorAnalyzer] [!] Nessun video da analizzare. Uscita.")
+            return
+
+        stop_execution = False
+        print(f"[BehaviorAnalyzer] Video in coda: {len(video_folders)}")
+
+        for video_name in tqdm(video_folders, desc="[BehaviorAnalyzer] Progress", unit="vid"):
             if stop_execution: break
 
-            output_filename = f"behavior_{video_name}_{self.cfg['names']['team']}.txt"
+            parts = video_name.split('-')
+            video_id = parts[1].split('.')[0] if len(parts) > 1 else video_name
 
-            # Check file esistente tramite reporter
-            if os.path.exists(os.path.join(self.reporter.output_dir, output_filename)):
-                print(f"\nSkipping {video_name}, file esistente.")
+            team_id = self.cfg['names']['team']
+            output_filename = f"behavior_{video_id}_{team_id}.txt"
+            output_path_full = os.path.join(self.reporter.output_dir, output_filename)
+
+            if os.path.exists(output_path_full):
                 continue
 
             window_name = f"Behavior - {video_name}"
@@ -85,6 +107,7 @@ class BehaviorAnalyzer:
 
             start_time = time.time()
             frame_lines = []
+            current_video_interrupted = False
 
             try:
                 for frame_id, img, detections in self.tracker.track_video_generator(video_name):
@@ -97,9 +120,9 @@ class BehaviorAnalyzer:
                     field_contour = None
 
                     if self.field_filter:
-                        img_to_process = display_img if (display_img is not None) else img
-                        final_detections, field_contour = self.field_filter.filter_detections(img_to_process,
-                                                                                              detections)
+                        # Usiamo img originale per il calcolo per consistenza
+                        final_detections, field_contour = self.field_filter.filter_detections(img, detections)
+
                     count_roi1 = 0
                     count_roi2 = 0
 
@@ -127,20 +150,17 @@ class BehaviorAnalyzer:
 
                     self.reporter.save_txt_results(output_filename, frame_lines, append=True)
 
-                    # Visualizzazione
+                    # --- VISUALIZZAZIONE ---
                     if self.vis and display_img is not None:
-                        # 1. Disegna Contorno Campo (Debug)
-                        if self.field_filter and field_contour is not None:
-                            self.field_filter.draw_debug(display_img, field_contour)
-
-                        # 2. Disegna ROI
+                        # 1. Disegna ROI e Box PRIMA del filtro
+                        # Questo perché se il filtro fa il mosaico, ridimensiona l'immagine.
+                        # Disegniamo sul frame originale Full HD
                         current_counts = {'roi1': count_roi1, 'roi2': count_roi2}
                         for key, roi_def in rois_data.items():
                             c_val = current_counts.get(key, 0)
                             c_col = self.colors.get(key, (255, 255, 255))
                             self.vis.draw_roi(display_img, roi_def, c_val, color=c_col, label_key=key.upper())
 
-                        # 3. Disegna Giocatori
                         for det, color in to_draw:
                             self.vis.draw_box(
                                 img=display_img,
@@ -150,16 +170,24 @@ class BehaviorAnalyzer:
                                 color=color
                             )
 
+                        # 2. Applica la visualizzazione debug del Field Filter (Overlay o Mosaico)
+                        if self.field_filter:
+                             # Questo metodo potrebbe ritornare un mosaico 2x2 o l'immagine con contorno
+                             display_img = self.field_filter.draw_debug(display_img, field_contour)
+
+                        # 3. Mostra il risultato
                         if not self.vis.show_frame(window_name, display_img):
-                            print("\nInterruzione richiesta dall'utente (Tasto Q).")
+                            tqdm.write(f"\n[BehaviorAnalyzer] [STOP] Interruzione utente su video: {video_name}")
                             stop_execution = True
+                            current_video_interrupted = True
                             break
 
                 elapsed_time = round(time.time() - start_time, 4)
                 self.reporter.update_json_section("video_execution_times", {video_name: elapsed_time})
 
             except Exception as e:
-                print(f"Errore durante behavior analysis di {video_name}: {e}")
+                tqdm.write(f"[BehaviorAnalyzer] [ERROR] Errore su {video_name}: {e}")
+                # traceback.print_exc()
 
             finally:
                 if self.vis:
@@ -168,13 +196,21 @@ class BehaviorAnalyzer:
                     except:
                         pass
 
+                if current_video_interrupted and os.path.exists(output_path_full):
+                    try:
+                        os.remove(output_path_full)
+                        tqdm.write(f"[BehaviorAnalyzer] [INFO] Cancellato file parziale: {output_filename}")
+                    except OSError as e:
+                        tqdm.write(f"[BehaviorAnalyzer] [WARN] Impossibile cancellare file parziale: {e}")
+
         if self.vis:
             self.vis.close_windows()
 
-        print(f"Behavior Analysis Completata. File salvati in {self.reporter.output_dir}")
+        print(f"\n[BehaviorAnalyzer] [✔] Analisi completata (o interrotta).")
+        print(f"[BehaviorAnalyzer]     Output salvato in: {os.path.abspath(self.reporter.output_dir)}")
 
         if self.run_eval:
-            print("\n--- Avvio Valutazione Automatica (nMAE) ---")
+            print("\n[BehaviorAnalyzer] --- Avvio Valutazione Automatica (nMAE) sui video processati ---")
             original_subdirs = self.cfg['paths'].get('output_subdirs', [])
             current_subdir = os.path.join(self.conf_mode['test_name'], "behavior")
             self.cfg['paths']['output_subdirs'] = [current_subdir]

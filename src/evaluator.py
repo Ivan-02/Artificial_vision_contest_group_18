@@ -1,8 +1,9 @@
 import os
 import shutil
 import pandas as pd
+import traceback
 from .common.io_manager import ReportManager
-from .evaluation_helper import compute_nmae_from_behavior_files,build_trackeval_structure,compute_metrics_with_details
+from .evaluation_helper import compute_nmae_from_behavior_files, build_trackeval_structure, compute_metrics_with_details
 
 
 class Evaluator:
@@ -19,30 +20,27 @@ class Evaluator:
         Wrapper per il calcolo nMAE Ufficiale.
         Mantiene la firma originale ma usa la logica ufficiale internamente.
         """
-
-        print("\n" + "=" * 60)
-        print("AVVIO VALUTAZIONE UFFICIALE: BEHAVIOR ANALYSIS (nMAE)")
-        print("=" * 60)
+        print(f"\n[Evaluator] {'=' * 50}")
+        print("[Evaluator] AVVIO: BEHAVIOR ANALYSIS (nMAE)")
+        print(f"[Evaluator] {'=' * 50}")
 
         # Iteriamo sulle sottocartelle (es. test/behavior)
         for subdir in self.subdirs:
-            print(f"\n--- Elaborazione Behavior directory: {subdir} ---")
+            print(f"\n[Evaluator] >>> Elaborazione directory: {subdir}")
 
             # Directory dove si trovano i tuoi file .txt generati
             pred_dir = os.path.join(self.base_output_dir, subdir)
             if not os.path.exists(pred_dir):
-                print(f"Cartella predizioni non trovata: {pred_dir}")
+                print(f"[Evaluator] [!] ATTENZIONE: Cartella predizioni non trovata -> {pred_dir}")
                 continue
 
             reporter = ReportManager(pred_dir)
 
             # --- CHIAMATA AL CODICE UFFICIALE ---
-            # Le funzioni ufficiali richiedono stringhe per group (team_name)
             group_str = str(self.team_name)
 
             try:
                 # La funzione ufficiale vuole: dataset_root, predictions_root, group
-                # dataset_root è la cartella che contiene le cartelle video (es. test_set/videos)
                 results = compute_nmae_from_behavior_files(
                     dataset_root=self.gt_base_dir,
                     predictions_root=pred_dir,
@@ -54,10 +52,13 @@ class Evaluator:
                 has_behavior = results.get("has_behavior", False)
 
                 if has_behavior and nmae is not None:
-                    print(f"[{subdir}] OFFICIAL RESULTS -> MAE: {mae:.4f} | nMAE: {nmae:.4f}")
+                    print(f"[Evaluator]     Risultati Ufficiali [{subdir}]:")
+                    print(f"[Evaluator]     -------------------------------")
+                    print(f"[Evaluator]     MAE  : {mae:.4f}")
+                    print(f"[Evaluator]     nMAE : {nmae:.4f}")
+                    print(f"[Evaluator]     -------------------------------")
 
-                    # --- AGGIORNAMENTO REPORT (Mantiene compatibilità con il tuo sistema) ---
-                    # Salviamo lo score globale nel JSON "execution_report.json"
+                    # --- AGGIORNAMENTO REPORT ---
                     report_update = {
                         "OFFICIAL_SCORES": {
                             "MAE": round(mae, 6),
@@ -65,33 +66,31 @@ class Evaluator:
                         }
                     }
                     reporter.update_json_section("evaluation_results", report_update)
-                    print(f"Report JSON aggiornato: {reporter.json_path}")
+                    print(f"[Evaluator] [✔] Report JSON aggiornato: {os.path.basename(reporter.json_path)}")
 
                     # (Opzionale) Se vuoi salvare anche un CSV riassuntivo
                     csv_data = [{'Metric': 'nMAE', 'Score': nmae}, {'Metric': 'MAE', 'Score': mae}]
                     pd.DataFrame(csv_data).to_csv(os.path.join(pred_dir, 'official_behavior_metrics.csv'), index=False)
                 else:
-                    print(
-                        f"[{subdir}] Impossibile calcolare nMAE (File mancanti o non validi secondo il tool ufficiale).")
+                    print(f"[Evaluator] [!] Impossibile calcolare nMAE per {subdir} (File mancanti o non validi).")
 
             except Exception as e:
-                print(f"Errore critico durante la valutazione ufficiale Behavior: {e}")
+                print(f"[Evaluator] [ERROR] Errore critico Behavior Analysis: {e}")
 
     def run_hota(self):
         """
         Wrapper Ufficiale TrackEval che salva anche il CSV dettagliato.
         """
-
-        print("\n" + "=" * 60)
-        print("AVVIO VALUTAZIONE UFFICIALE: TRACKING (HOTA + DETTAGLI)")
-        print("=" * 60)
+        print(f"\n[Evaluator] {'=' * 50}")
+        print("[Evaluator] AVVIO: TRACKING ANALYSIS (HOTA)")
+        print(f"[Evaluator] {'=' * 50}")
 
         for subdir in self.subdirs:
-            print(f"\n--- Elaborazione HOTA directory: {subdir} ---")
+            print(f"\n[Evaluator] >>> Elaborazione directory: {subdir}")
 
             pred_dir = os.path.join(self.base_output_dir, subdir)
             if not os.path.exists(pred_dir):
-                print(f"Cartella predizioni non trovata: {pred_dir}")
+                print(f"[Evaluator] [!] ATTENZIONE: Cartella predizioni non trovata -> {pred_dir}")
                 continue
 
             reporter = ReportManager(pred_dir)
@@ -100,8 +99,8 @@ class Evaluator:
             split_name = self.cfg['paths'].get('split_name', 'test')
 
             try:
-                # 1. Costruzione Struttura (incluso il fix per skipping video mancanti)
-                print("Costruzione struttura temporanea TrackEval...")
+                # 1. Costruzione Struttura
+                print("[Evaluator]     [1/3] Costruzione struttura temporanea TrackEval...")
                 gt_folder, tr_folder, seqmap_file = build_trackeval_structure(
                     dataset_root=self.gt_base_dir,
                     predictions_root=pred_dir,
@@ -113,8 +112,8 @@ class Evaluator:
                     tracker_name="test"
                 )
 
-                # 2. Calcolo Metriche Dettagliate
-                print("Esecuzione TrackEval e estrazione metriche...")
+                # 2. Calcolo Metriche
+                print("[Evaluator]     [2/3] Esecuzione TrackEval e calcolo metriche...")
                 detailed_results = compute_metrics_with_details(
                     gt_folder=gt_folder,
                     trackers_folder=tr_folder,
@@ -126,25 +125,26 @@ class Evaluator:
 
                 # 3. Creazione e Salvataggio CSV
                 if detailed_results:
+                    print("[Evaluator]     [3/3] Elaborazione risultati finali...")
                     df = pd.DataFrame(detailed_results)
 
                     # Riorganizziamo le colonne per leggibilità
                     cols = ['Video', 'HOTA', 'DetA', 'AssA', 'MOTA', 'TP', 'FN', 'FP']
-                    # Filtra solo colonne esistenti nel caso mancasse qualcosa
                     cols = [c for c in cols if c in df.columns]
                     df = df[cols]
 
                     csv_path = os.path.join(pred_dir, 'hota_metrics_official.csv')
                     df.to_csv(csv_path, index=False)
-                    print(f"Report CSV dettagliato salvato: {csv_path}")
+                    print(f"[Evaluator] [✔] CSV dettagliato salvato: {os.path.basename(csv_path)}")
 
                     # Estraiamo HOTA globale per il log JSON
                     global_row = df[df['Video'] == 'GLOBAL_SCORE']
                     if not global_row.empty:
                         final_hota = global_row.iloc[0]['HOTA']
-                        print("-" * 60)
-                        print(f"[{subdir}] GLOBAL OFFICIAL HOTA: {final_hota:.6f}")
-                        print("-" * 60)
+
+                        print(f"[Evaluator]     -------------------------------")
+                        print(f"[Evaluator]     GLOBAL HOTA SCORE: {final_hota:.6f}")
+                        print(f"[Evaluator]     -------------------------------")
 
                         # Aggiornamento JSON
                         report_update = {
@@ -156,12 +156,15 @@ class Evaluator:
                             }
                         }
                         reporter.update_json_section("evaluation_results", report_update)
+                        print(f"[Evaluator] [✔] Report JSON aggiornato con HOTA Score.")
 
-                # 4. Pulizia
+                else:
+                    print("[Evaluator] [!] ATTENZIONE: Nessun risultato calcolato.")
+                    print("[Evaluator]     Possibili cause: Nessun video in comune tra GT e Predizioni, o file vuoti.")
+
                 if os.path.exists(self.trackeval_tmp_root):
                     shutil.rmtree(self.trackeval_tmp_root)
 
             except Exception as e:
-                print(f"Errore critico durante la valutazione HOTA: {e}")
-                import traceback
+                print(f"[Evaluator] [ERROR] Errore critico Tracking Analysis: {e}")
                 traceback.print_exc()

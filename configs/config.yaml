@@ -1,6 +1,7 @@
 project_name: "SoccerNet_YOLO11_X"
 
 device: 0
+fps: 25
 
 names:
   team: 18
@@ -13,6 +14,6 @@ paths:
   #model_weights: "https://huggingface.co/aabyzov/easychamp-player-detection-yolov8/resolve/main/player_detection_best.pt"
   model_weights: "./weights/yolo11x.pt"
   output_submission: "./output/submissions"
-  output_subdirs: ["track_yolo11x/track"]
+  output_subdirs: ["track_prova_nuovo_eval/track"]
   output_val: "./output/validation"
   temp_tracker_yaml: "./output/temp_botsort.yaml"
