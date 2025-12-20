@@ -8,6 +8,7 @@ from .evaluator import Evaluator
 from .common.io_manager import ReportManager
 from .common.vis_utils import Visualizer
 from .common.data_utils import GeometryUtils
+from .field_detector import FieldFilter
 
 
 class BehaviorAnalyzer:
@@ -28,6 +29,11 @@ class BehaviorAnalyzer:
             self.vis = Visualizer(display_width=conf_mode['display_width'])
         else:
             self.vis = None
+
+        if FieldFilter:
+            self.field_filter = FieldFilter(debug=self.enable_display)
+        else:
+            self.field_filter = None
 
         self.run_eval = conf_mode.get('eval', False)
 
@@ -75,12 +81,7 @@ class BehaviorAnalyzer:
                 continue
 
             window_name = f"Behavior - {video_name}"
-
-            # Caricamento ROI
             rois_data = self._load_rois(video_name)
-            if not rois_data:  # Fallback estremo
-                print("File di configurazione ROI non trovato")
-                break
 
             start_time = time.time()
             frame_lines = []
@@ -90,55 +91,70 @@ class BehaviorAnalyzer:
                     h_img, w_img = img.shape[:2]
                     frame_lines.clear()
 
+                    display_img = img.copy() if self.enable_display else None
+
+                    final_detections = detections
+                    field_contour = None
+
+                    if self.field_filter:
+                        img_to_process = display_img if (display_img is not None) else img
+                        final_detections, field_contour = self.field_filter.filter_detections(img_to_process,
+                                                                                              detections)
                     count_roi1 = 0
                     count_roi2 = 0
 
                     to_draw = []
 
-                    for det in detections:
+                    for det in final_detections:
                         assigned_color = self.colors['default']
+                        in_roi = False
 
                         if GeometryUtils.is_in_roi(det['xywh'], rois_data.get('roi1'), w_img, h_img):
                             count_roi1 += 1
                             assigned_color = self.colors['roi1']
+                            in_roi = True
 
-                        elif GeometryUtils.is_in_roi(det['xywh'], rois_data.get('roi2'), w_img, h_img):
+                        if GeometryUtils.is_in_roi(det['xywh'], rois_data.get('roi2'), w_img, h_img):
                             count_roi2 += 1
-                            assigned_color = self.colors['roi2']
+                            if not in_roi:  # Se non era già nella 1, coloralo come 2
+                                assigned_color = self.colors['roi2']
 
-                        if self.vis:
+                        if self.vis and display_img is not None:
                             to_draw.append((det, assigned_color))
 
-                    # --- 2. Preparazione Output TXT ---
                     frame_lines.append(f"{frame_id},1,{count_roi1}\n")
                     frame_lines.append(f"{frame_id},2,{count_roi2}\n")
 
                     self.reporter.save_txt_results(output_filename, frame_lines, append=True)
 
-                    if self.vis:
+                    # Visualizzazione
+                    if self.vis and display_img is not None:
+                        # 1. Disegna Contorno Campo (Debug)
+                        if self.field_filter and field_contour is not None:
+                            self.field_filter.draw_debug(display_img, field_contour)
+
+                        # 2. Disegna ROI
                         current_counts = {'roi1': count_roi1, 'roi2': count_roi2}
                         for key, roi_def in rois_data.items():
                             c_val = current_counts.get(key, 0)
                             c_col = self.colors.get(key, (255, 255, 255))
-                            self.vis.draw_roi(img, roi_def, c_val, color=c_col, label_key=key.upper())
+                            self.vis.draw_roi(display_img, roi_def, c_val, color=c_col, label_key=key.upper())
 
-                        # Disegna i box dei giocatori con il colore assegnato
+                        # 3. Disegna Giocatori
                         for det, color in to_draw:
                             self.vis.draw_box(
-                                img=img,
+                                img=display_img,
                                 box_xyxy=det['xyxy'],
                                 track_id=det['track_id'],
                                 conf=det['conf'],
                                 color=color
                             )
 
-                        # Mostra frame
-                        if not self.vis.show_frame(window_name, img):
+                        if not self.vis.show_frame(window_name, display_img):
                             print("\nInterruzione richiesta dall'utente (Tasto Q).")
                             stop_execution = True
                             break
 
-                # --- Fine Video ---
                 elapsed_time = round(time.time() - start_time, 4)
                 self.reporter.update_json_section("video_execution_times", {video_name: elapsed_time})
 
@@ -149,14 +165,13 @@ class BehaviorAnalyzer:
                 if self.vis:
                     try:
                         cv2.destroyWindow(window_name)
-                    except cv2.error:
+                    except:
                         pass
 
         if self.vis:
             self.vis.close_windows()
 
         print(f"Behavior Analysis Completata. File salvati in {self.reporter.output_dir}")
-        print(f"Report esecuzione salvato in: {self.reporter.json_path}")
 
         if self.run_eval:
             print("\n--- Avvio Valutazione Automatica (nMAE) ---")

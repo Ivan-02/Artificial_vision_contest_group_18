@@ -74,29 +74,68 @@ class FieldFilter:
         for det in detections:
             xc, yc, w, h = det['xywh']
 
+            # Calcolo coordinate piedi
             feet_x = int(xc)
             feet_y = int(yc + (h / 2.0))
 
+            # Distanza dal contorno (+ dentro, - fuori)
             dist = cv2.pointPolygonTest(field_contour, (float(feet_x), float(feet_y)), True)
 
-            if feet_y > (img_h * 0.80):
+            # --- LOGICA CORRETTA ---
+
+            # 1. Controlliamo se il box tocca il bordo inferiore dell'immagine (con margine di 5px)
+            # Questo identifica i giocatori "tagliati" dalla telecamera.
+            is_clipping_bottom = feet_y >= (img_h - 5)
+
+            if is_clipping_bottom:
+                # CASO: Giocatore tagliato a metà.
+                # Non possiamo essere severi (+5) perché il bordo del campo coincide col bordo immagine.
+                # Accettiamo anche 0 o leggermente fuori (-5) per compensare l'erosione.
+                threshold = -5.0
+
+            elif feet_y > (img_h * 0.80):
+                # CASO: Parte bassa ma NON tagliato (Vigili, Allenatori).
+                # Qui rimaniamo SEVERI per evitare i falsi positivi sulla pista.
                 threshold = 5.0
+
             else:
+                # CASO: Parte alta/centrale del campo.
                 threshold = -15.0
 
+            # Controllo Geometrico
             is_geometrically_inside = dist >= threshold
 
-            is_ground_green = self._check_pixel_under_feet(feet_x, feet_y, img_w, img_h)
+            # Controllo Colore (Pixel Check)
+            # Se è tagliato in basso, il controllo colore sui piedi potrebbe fallire (siamo al bordo).
+            # Ci fidiamo della geometria (Convex Hull) che in quel punto dovrebbe coprire tutto.
+            if is_clipping_bottom:
+                # Per chi è tagliato, controlliamo il colore un po' più in su (es. ginocchia)
+                # per evitare artefatti del bordo immagine, oppure ci fidiamo solo della geometria.
+                # Qui controllo 10px sopra il bordo.
+                safe_y = max(0, feet_y - 10)
+                is_ground_green = self._check_pixel_under_feet(feet_x, safe_y, img_w, img_h)
+            else:
+                is_ground_green = self._check_pixel_under_feet(feet_x, feet_y, img_w, img_h)
 
-            if is_geometrically_inside and (is_ground_green or dist > 50):
+            # Decisione Finale
+            # Nota: Se è tagliato (is_clipping_bottom), diamo priorità alla geometria
+            # perché il colore al bordo estremo è spesso instabile.
+            if is_geometrically_inside and (is_ground_green or dist > 50 or is_clipping_bottom):
                 filtered_detections.append(det)
                 final_decision = True
             else:
                 final_decision = False
 
             if self.debug:
+                # Debug visivo migliorato
                 color = (0, 255, 0) if final_decision else (0, 0, 255)
                 cv2.circle(frame, (feet_x, feet_y), 5, color, -1)
+
+                # Scrivi info di debug se siamo in basso
+                if feet_y > img_h * 0.8:
+                    info = f"Cut:{int(is_clipping_bottom)} D:{int(dist)}"
+                    cv2.putText(frame, info, (feet_x - 20, feet_y - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
         return filtered_detections, field_contour
 
