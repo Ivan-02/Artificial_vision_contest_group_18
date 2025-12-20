@@ -13,14 +13,14 @@ def load_config(path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str, required=True, choices=["prepare_dt", "prepare_bh", "val", "track", "eval_hota", "eval_roi" ,"roi"], help="Mode of operation")
+    parser.add_argument("--mode", type=str, required=True, choices=["prepare", "val", "track", "eval_hota", "eval_roi" ,"roi"], help="Mode of operation")
     parser.add_argument("--config", type=str, required=False, help="Config file")
     args = parser.parse_args()
 
     print(os.getcwd())
     cfg = load_config("./configs/config.yaml")
 
-    no_config_modes = ["eval_hota", "prepare_dt", "prepare_bh", "eval_roi"]
+    no_config_modes = ["eval_hota", "prepare", "eval_roi"]
 
     if not args.config and args.mode not in no_config_modes:
         print("Config file not provided")
@@ -32,13 +32,9 @@ if __name__ == "__main__":
         evaluator = Evaluator(cfg)
         evaluator.run_behavior()
 
-    elif args.mode == "prepare_dt":
+    elif args.mode == "prepare":
         dm = DataManager(cfg)
         dm.prepare_dataset()
-
-    elif args.mode == "prepare_bh":
-        dm = DataManager(cfg)
-        dm.prepare_behavior_gt()
 
     elif args.mode == "val":
         validator = Validator(cfg, cfg_mode)

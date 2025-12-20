@@ -67,8 +67,7 @@ class BehaviorAnalyzer:
         for video_name in tqdm(video_folders, desc="Behavior Analysis"):
             if stop_execution: break
 
-            video_id = video_name.split('-')[1].split('.')[0]
-            output_filename = f"behavior_{video_id}_{self.cfg['names']['team']}.txt"
+            output_filename = f"behavior_{video_name}_{self.cfg['names']['team']}.txt"
 
             # Check file esistente tramite reporter
             if os.path.exists(os.path.join(self.reporter.output_dir, output_filename)):

@@ -19,6 +19,18 @@ class DataManager:
     def prepare_dataset(self):
         self._unzip_and_delete(self.raw_data_path, self.raw_data_path)
 
+        # --- NOVITÀ: Rinomina cartelle e copia ROI PRIMA della generazione del dataset ---
+
+        # 1. Rinomina le cartelle NSMOT-XX -> XX
+        # È fondamentale farlo PRIMA della conversione YOLO affinché i nomi dei file
+        # nel dataset finale siano puliti (es. "01_frame_00.txt" invece di "NSMOT-01_frame...")
+        self._rename_video_folders()
+
+        # 2. Distribuzione del file roi.json nelle sottocartelle
+        self._distribute_roi_json()
+
+        # --------------------------------------------------------------------------------
+
         subsets = ['train', 'test']
         found_any = False
 
@@ -38,7 +50,82 @@ class DataManager:
             self._convert_mot_to_yolo(self.raw_data_path, self.yolo_dataset_path, sub_folder='train')
 
         self._create_yolo_yaml()
+
+        print("---Preparazione behavior GT")
+        self.prepare_behavior_gt()
+
+        print("---Rimozione classe ball dalla GT")
+        self.remove_ball_from_all_gt()
+
         print("--- Preparazione Dataset Completata ---\n")
+
+    def rename_video_folders(self):
+        """
+        Scansiona le cartelle train/test e rinomina le cartelle video
+        da 'SNMOT-XX' a 'XX'.
+        """
+        print("--- Standardizzazione nomi cartelle video (SNMOT-XX -> XX) ---")
+        subsets = ['train', 'test']
+
+        for subset in subsets:
+            subset_path = os.path.join(self.raw_data_path, subset)
+            if not os.path.exists(subset_path):
+                continue
+
+            # Itera sulle cartelle
+            for folder_name in os.listdir(subset_path):
+                folder_path = os.path.join(subset_path, folder_name)
+
+                if os.path.isdir(folder_path) and folder_name.startswith("SNMOT-"):
+                    # Estrae l'indice (es. SNMOT-01 -> 01)
+                    try:
+                        new_name = folder_name.split('-')[1]
+                        new_path = os.path.join(subset_path, new_name)
+
+                        # Evita sovrascritture se la cartella esiste già
+                        if not os.path.exists(new_path):
+                            os.rename(folder_path, new_path)
+                            print(f"Rinominato: {folder_name} -> {new_name}")
+                        else:
+                            print(f"Warning: Impossibile rinominare {folder_name}, {new_name} esiste già.")
+                    except IndexError:
+                        print(f"Skipping format non atteso: {folder_name}")
+
+    def _distribute_roi_json(self):
+        """
+        Copia il file roi.json:
+        1. In ogni sottocartella (train/test).
+        2. All'interno di ogni cartella video in train/test.
+        """
+        print("--- Distribuzione file ROI.json ---")
+        source_roi = os.path.join('./configs', 'roi.json')  # Path relativo come richiesto
+        # Fallback se non lo trova nel path relativo, prova a usare config se definito
+        if not os.path.exists(source_roi) and 'roi' in self.cfg['paths']:
+            source_roi = self.cfg['paths']['roi']
+
+        if not os.path.exists(source_roi):
+            print(f"Errore: File ROI sorgente non trovato in {source_roi}")
+            return
+
+        subsets = ['train', 'test']
+
+        for subset in subsets:
+            subset_path = os.path.join(self.raw_data_path, subset)
+            if not os.path.exists(subset_path):
+                continue
+
+            # 1. Copia nella root del subset (es. raw_data/train/roi.json)
+            dst_subset = os.path.join(subset_path, 'roi.json')
+            shutil.copy(source_roi, dst_subset)
+
+            # 2. Copia in ogni cartella video
+            video_folders = [f for f in os.listdir(subset_path) if os.path.isdir(os.path.join(subset_path, f))]
+            for video_name in video_folders:
+                video_path = os.path.join(subset_path, video_name)
+                dst_video = os.path.join(video_path, 'roi.json')
+                shutil.copy(source_roi, dst_video)
+
+        print("Distribuzione ROI completata.")
 
     def prepare_behavior_gt(self):
         """
@@ -72,8 +159,7 @@ class DataManager:
                 ini_path = os.path.join(video_path, 'gameinfo.ini')
                 img_dir = os.path.join(video_path, 'img1')
 
-                video_id_str = video_name.split('-')[1]
-                output_filename = f"behavior_{video_id_str}_gt.txt"
+                output_filename = f"behavior_gt.txt"
                 output_path = os.path.join(gt_folder, output_filename)
 
                 if os.path.exists(output_path):
@@ -274,3 +360,73 @@ class DataManager:
                         os.symlink(os.path.abspath(src_img), os.path.abspath(dst_img))
                     except:
                         shutil.copy(os.path.abspath(src_img), os.path.abspath(dst_img))
+
+    def remove_ball_from_all_gt(self):
+        """
+        Versione OTTIMIZZATA:
+        1. Itera su tutti i video.
+        2. Se trova 'gt.txt.bak', SALTA il video (già processato).
+        3. Se non lo trova, rimuove la palla e crea il backup.
+        """
+        print("--- AVVIO RIMOZIONE PALLA (con skip dei già processati) ---")
+
+        subsets = ['train', 'test']
+        total_modified = 0
+        total_skipped = 0
+        total_errors = 0
+
+        for subset in subsets:
+            subset_path = os.path.join(self.raw_data_path, subset)
+            if not os.path.exists(subset_path):
+                continue
+
+            video_folders = [f for f in os.listdir(subset_path) if os.path.isdir(os.path.join(subset_path, f))]
+
+            for video_name in tqdm(video_folders, desc=f"Elaborazione {subset}"):
+                video_path = os.path.join(subset_path, video_name)
+                gt_path = os.path.join(video_path, 'gt', 'gt.txt')
+                backup_path = gt_path + ".bak"  # Percorso del backup
+                ini_path = os.path.join(video_path, 'gameinfo.ini')
+
+                # 1. CONTROLLO SKIP: Se esiste il backup, il video è già fatto.
+                if os.path.exists(backup_path):
+                    total_skipped += 1
+                    continue
+
+                # Controllo esistenza file sorgenti
+                if not os.path.exists(gt_path) or not os.path.exists(ini_path):
+                    continue
+
+                try:
+                    # 2. Logica di rimozione (eseguita solo se non c'è backup)
+                    id_map = GameInfoParser.get_id_map(ini_path)
+                    ball_ids = [k for k, v in id_map.items() if "ball" in str(v).lower()]
+
+                    if not ball_ids:
+                        continue
+
+                    df = pd.read_csv(gt_path, header=None)
+                    if df.empty: continue
+
+                    df.columns = ['frame_id', 'obj_id', 'x', 'y', 'w', 'h', 'conf', 'cls', 'vis', 'u']
+
+                    original_count = len(df)
+                    df_clean = df[~df['obj_id'].isin(ball_ids)]
+                    new_count = len(df_clean)
+
+                    # 3. Salvataggio e creazione backup
+                    if new_count < original_count:
+                        shutil.copy(gt_path, backup_path)  # Crea il backup ORA
+                        df_clean.to_csv(gt_path, header=False, index=False)
+                        total_modified += 1
+                    else:
+                        pass
+
+                except Exception as e:
+                    print(f"Errore su {video_name}: {e}")
+                    total_errors += 1
+
+        print("\n--- OPERAZIONE COMPLETATA ---")
+        print(f"Video modificati ora: {total_modified}")
+        print(f"Video saltati (già fatti): {total_skipped}")
+        print(f"Errori: {total_errors}")
