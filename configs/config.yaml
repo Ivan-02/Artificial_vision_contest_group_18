@@ -17,3 +17,4 @@ paths:
   output_subdirs: ["track_prova_nuovo_eval/track"]
   output_val: "./output/validation"
   temp_tracker_yaml: "./output/temp_botsort.yaml"
+  output_contest: "./output/submissions/test_name/results" #Da modificare il path dove sono salvate le predizioni

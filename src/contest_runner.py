@@ -20,17 +20,12 @@ class ContestRunner:
         # Inizializza il tracker (gestisce il modello YOLO e il caricamento video)
         self.tracker = Tracker(config, conf_mode)
 
-        # --- Setup Output Managers ---
-        # 1. Output per il Tracking
-        track_out_dir = os.path.join(self.cfg['paths']['output_submission'], conf_mode['test_name'], "track")
-        self.reporter_track = ReportManager(track_out_dir)
+        common_out_dir = os.path.join(self.cfg['paths']['output_submission'], conf_mode['test_name'], "results")
 
-        # 2. Output per la Behavior Analysis
-        behav_out_dir = os.path.join(self.cfg['paths']['output_submission'], conf_mode['test_name'], "behavior")
-        self.reporter_behav = ReportManager(behav_out_dir)
+        self.reporter_track = ReportManager(common_out_dir)
+        self.reporter_behav = ReportManager(common_out_dir)
 
-        print(f"[ContestRunner] Output Tracking: {track_out_dir}")
-        print(f"[ContestRunner] Output Behavior: {behav_out_dir}")
+        print(f"[ContestRunner] Output Directory (Unificata): {common_out_dir}")
 
         # --- Setup Visualizer e Filtri ---
         self.enable_display = self.conf_mode.get('display', False)
@@ -104,6 +99,7 @@ class ContestRunner:
                     lines_behav.append(f"{frame_id},2,{count_roi2}\n")
 
                     # 2. SALVATAGGIO SU DISCO (Entrambi i file, modalità append)
+                    # Scrivono entrambi nella stessa 'common_out_dir' definita nell'init
                     if lines_track:
                         self.reporter_track.save_txt_results(fname_track, lines_track, append=True)
                     if lines_behav:
