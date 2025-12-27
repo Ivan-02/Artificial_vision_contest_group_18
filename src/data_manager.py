@@ -26,7 +26,7 @@ class DataManager:
         self._unzip_and_delete(self.raw_data_path, self.raw_data_path)
 
         print("\n[DataManager] [2/7] Standardizzazione nomi cartelle...")
-        self._rename_video_folders()
+        self.rename_video_folders()
 
         print("\n[DataManager] [3/7] Distribuzione configurazioni ROI...")
         self._distribute_roi_json()

@@ -417,7 +417,7 @@ if __name__ == "__main__":
 
 
     simulate_and_eval_hota05(
-        dataset_root=cfg["paths"]["raw_data"],
+        dataset_root=cfg["paths"]["video_contest"],
         predictions_root=cfg["paths"]["output_contest"],
         group=cfg["names"]["team"],
         fps=200.0,

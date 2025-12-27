@@ -25,7 +25,7 @@ project_root/
 │       └── test/             <-- Inserire qui le cartelle dei video di gara (es. "016", etc.)
 │           ├── XXX/          <-- Id del video
 │           │   ├── img1/     <-- Sequenza immagini .jpg
-│           │   ├── gt/       <-- Cartella che contiene le ground thruth per track e behavior ("gt.txt", "behavior_xxx_gt.txt")
+│           │   ├── gt/       <-- Cartella che contiene le ground thruth per track e behavior ("gt.txt", "behavior_gt.txt")
 │           │   ├── gameinfo.ini
 │           │   ├── roi.json  <-- File roi
 │           │   └── ...
@@ -46,13 +46,29 @@ Per avviare l'elaborazione completa (Tracking + Behavior Analysis) su tutti i vi
 ```
 python main.py --mode contest --config configs/config.yaml
 ```
-Descrizione del processo:
+**⚠️ Importante - Configurazione Percorsi (`configs/config.yaml`):**
+In modalità contest, è fondamentale garantire la coerenza tra i percorsi definiti nel file di configurazione affinché sia l'elaborazione che il simulatore funzionino sugli stessi dati. Assicurarsi che:
 
-1. Inizializzazione: Lo script carica le configurazioni da `configs/config.yaml.`
-2. Tracking: Esegue il tracciamento dei giocatori utilizzando YOLO e BoT-SORT, applicando un FieldFilter per rimuovere rilevamenti fuori dal campo di gioco.
-3. Behavior Analysis: Analizza le posizioni dei giocatori rispetto alle ROI definite per conteggiare le presenze.
-4. Output: Genera i file di testo richiesti per la sottomissione.
+1.  La variabile `paths.split` corrisponda al nome della sottocartella contenente i video del contest (es. `"test"` o `"contest"`) presente dentro `raw_data`.
+2.  Il percorso completo risultante dalla concatenazione di **`paths.raw_data`** e **`paths.split`** deve essere identico al percorso specificato in **`paths.video_contest`**.
+    * *Esempio:* Se `raw_data` è `"./dataset/raw_data"` e `split` è `"contest"`, allora `video_contest` deve essere impostato a `"../../dataset/raw_data/contest"`.
 
+**Descrizione del processo:**
+
+1.  **Inizializzazione:** Lo script carica le configurazioni globali da `configs/config.yaml` e i parametri specifici di tracking dal file passato come argomento (`tracking.yaml`).
+2.  **Tracking:** Esegue il tracciamento dei giocatori utilizzando YOLO e BoT-SORT, applicando un `FieldFilter` per rimuovere rilevamenti fuori dal campo di gioco (sugli spalti).
+3.  **Behavior Analysis:** Analizza le posizioni dei giocatori rispetto alle ROI definite per conteggiare le presenze.
+4.  **Output:** Genera i file di testo richiesti per la sottomissione.
+---
+### 🔬 Validazione e Grid Search
+Il progetto include un modulo `validator.py` utilizzato in fase di sviluppo per identificare i migliori iperparametri del modello.
+
+Scopo: Questo script esegue una Grid Search iterando su diverse combinazioni di soglie di confidenza (`conf_threshold`) e soglie di IoU (`iou_threshold`). Per ogni combinazione, calcola la metrica DetA (Detection Accuracy) basata su Precision e Recall, salvando i risultati in un file CSV per determinare la configurazione ottimale.
+
+Comando:
+```bash
+python main.py --mode val --config configs/val.yaml
+```
 ---
 ### 🎮 Simulatore e Visualizzazione Interattiva
 Il progetto include uno strumento dedicato (`simulator.py`) per visualizzare graficamente i risultati generati dal Contest Runner e calcolare le metriche in tempo reale. Questo tool mostra a video il confronto tra Ground Truth (sinistra) e Predizioni (destra), utilissimo per il debug qualitativo.
@@ -152,31 +168,67 @@ Dove:
 
 
 ---
+### ⚙️ Dettagli File di Configurazione
+#### 1. File `configs/config.yaml`.\
+Questo file gestisce i percorsi globali e le impostazioni generali del progetto.
 
-### 📤 Output
-I risultati saranno salvati automaticamente nella cartella specificata nel file `config.yaml` (default: `./output/submissions/test_name/results`).
-Troverete i file formattati secondo le specifiche della traccia:
+| Parametro | Descrizione |
+| :--- | :--- |
+| `project_name` | Nome del progetto (utilizzato nei log o output YOLO). |
+| `device` | ID del dispositivo hardware (es. `0` per GPU, `cpu` per CPU). |
+| `fps` | Frame rate di riferimento per le valutazioni temporali (default: 25). |
+| `names.team` | ID numerico del team (es. `18`), usato per nominare i file di output. |
+| `paths.raw_data` | Percorso alla cartella contenente i video di test/train. |
+| `paths.roi` | Percorso al file JSON di configurazione delle ROI di default. |
+| `paths.split` | Sottocartella da utilizzare dentro `raw_data` (es. `test`). |
+| `paths.yolo_dataset` | Cartella temporanea/di appoggio per conversione dataset YOLO. |
+| `paths.model_weights` | Percorso al file dei pesi del modello (`.pt`). |
+| `paths.output_submission` | Directory principale dove verranno salvati tutti i risultati. |
+| `paths.output_subdirs` | Lista delle sottocartelle su cui lanciare gli script di valutazione. |
+| `paths.output_val` | Directory output per i risultati della grid search (Validator). |
+| `paths.temp_tracker_yaml` | File temporaneo per passare la config al tracker interno di Ultralytics. |
+| `paths.video_contest` | Percorso base per i video del contest (utilizzato come `dataset_root` in `simulator.py`). Es: `../../dataset/contest.` |
+| `paths.output_contest` | Directory specifica dove il simulatore cerca i file generati. |
 
-* `tracking_K_XX.txt` (es. tracking_1_18.txt): Contiene `frame_id`, `object_id` e `bounding box`.
-* `behavior_K_XX.txt` (es. behavior_1_18.txt): Contiene `frame_id`, `region_id` e `conteggio giocatori`.
-(Dove `18` è l'ID del nostro Team)
+#### 2. File `configs/tracking.yaml`
+Questo file controlla i parametri specifici dell'algoritmo di tracking e di filtraggio.
+
+⚠️ **ATTENZIONE:** La maggior parte dei parametri in questo file (soglie confidenza, IoU, HSV, parametri BoT-SORT) sono stati ottimizzati tramite test e non devono essere modificati.
+
+**GLI UNICI CAMPI CHE VANNO MODIFICATI SONO:**
+
+* `test_name`: Nome della cartella di output dove verranno salvati i risultati (es. `risultati_gara_finale`).
+* `display`: (`True`/`False`) Abilita o disabilita la visualizzazione a video durante l'elaborazione.
+* `field_det_settings -> debug`: (`True`/`False`) Attiva la modalità debug per il filtro campo.
+* `field_det_settings -> debug_mosaic`:
+    * `True`: Mostra i 4 stadi del filtro per calibrazione avanzata.
+    * `False`: Mostra solo il contorno verde del campo.
 
 ---
 
-### ⚙️ Configurazione Avanzata
-I parametri principali dell'algoritmo possono essere modificati nei seguenti file:
 
-* `configs/config.yaml`: Percorsi del dataset, pesi del modello, nome del team.
-* `configs/tracking.yaml`: Soglie di confidenza, IoU, parametri del Tracker (BoT-SORT) e parametri del Field Detector (filtro colore HSV e morfologico).
+### 📤 Output
 
-**Parametri Field Detector (`configs/tracking.yaml`):**
-Il filtro per il rilevamento del campo da gioco può essere calibrato tramite `field_det_settings`:
+La destinazione dei file di output dipende dalla modalità di esecuzione scelta.
+Il percorso base è definito in `config.yaml` (`./output/submissions/`) combinato con il `test_name` definito in `tracking.yaml`.
 
--   `debug`: Impostare a `True` per visualizzare il contorno del campo rilevato.
--   `debug_mosaic`:
-    -   `True`: Mostra una vista diagnostica 2x2 (Originale, HSV, Morfologica, Finale) utile per il tuning.
-    -   `False`: Mostra solo il contorno verde del campo sull'immagine originale.
+**1. Modalità Contest (`--mode contest`)**
+Tutti i risultati vengono salvati in un'unica cartella unificata (pronta per la consegna):
+> `./output/submissions/<test_name>/results/`
 
+**2. Modalità Singole (`--mode track` o `--mode roi`)**
+I risultati vengono organizzati in sottocartelle separate per mantenere ordine durante il debug:
+-   **Tracking:** `./output/submissions/<test_name>/track/`
+-   **Behavior:** `./output/submissions/<test_name>/behavior/`
+
+**Formato dei file:**
+Indipendentemente dalla cartella di salvataggio, i file generati seguono le specifiche della traccia:
+
+* `tracking_K_XX.txt` (es. `tracking_1_18.txt`):
+    Contiene: `frame_id`, `object_id`, `x`, `y`, `w`, `h`.
+* `behavior_K_XX.txt` (es. `behavior_1_18.txt`):
+    Contiene: `frame_id`, `region_id`, `n_players`.\
+(Dove `18` è l'ID del nostro Team)
 ---
 ### 👥 Autori - Gruppo 18
 - Simone Faraulo
