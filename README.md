@@ -11,9 +11,11 @@ Eseguire il seguente comando per installare tutte le librerie necessarie:
 ```bash
 pip install -r requirements.txt
 ```
----
 
 (Nota: Il file requirements.txt deve includere: `ultralytics , opencv-python, numpy, pandas, pyyaml, tqdm, lapx, scipy`)
+
+---
+
 ### 📂 Struttura Cartelle Richiesta
 Il sistema si aspetta la seguente struttura per i dati di input, conforme alla traccia del progetto:
 ```
