@@ -1,5 +1,6 @@
 import argparse
 from src.behavior import BehaviorAnalyzer
+from src.contest_runner import ContestRunner
 from src.evaluator import Evaluator
 from src.tracker import Tracker
 from src.data_manager import *
@@ -13,7 +14,7 @@ def load_config(path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str, required=True, choices=["prepare", "val", "track", "eval_hota", "eval_roi" ,"roi"], help="Mode of operation")
+    parser.add_argument("--mode", type=str, required=True, choices=["prepare", "val", "track", "eval_hota", "eval_roi" ,"roi", "contest"], help="Mode of operation")
     parser.add_argument("--config", type=str, required=False, help="Config file")
     args = parser.parse_args()
 
@@ -31,6 +32,10 @@ if __name__ == "__main__":
     if args.mode == "eval_roi":
         evaluator = Evaluator(cfg)
         evaluator.run_behavior()
+
+    elif args.mode == "contest":
+        contest = ContestRunner(cfg, cfg_mode)
+        contest.run()
 
     elif args.mode == "prepare":
         dm = DataManager(cfg)

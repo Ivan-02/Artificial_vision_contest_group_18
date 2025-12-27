@@ -1,4 +1,4 @@
-test_name: "track_5_re_id"
+test_name: "track_prova_contest_runner"
 eval: True
 single_cls: true
 specific_video:
@@ -15,7 +15,7 @@ persist: True
 agnostic_nms: True
 classes: [0]
 random: False
-max_video: 49
+max_video: 5
 
 field_det_settings:
     debug: true
