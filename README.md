@@ -1,8 +1,7 @@
 # Artificial Vision Project - Group 18
 ## Soccer Player Tracking and Behavior Analysis
 
-Questo repository contiene la soluzione del Gruppo 18 per la challenge di Artificial Vision. Il sistema esegue il tracciamento dei giocatori e il conteggio nelle ROI specificate, utilizzando YOLO per la detection e BoT-SORT per il tracking, con un filtraggio specifico per il campo da gioco.
-
+Questo repository contiene la soluzione del Gruppo 18 per la challenge di Artificial Vision. Il sistema esegue il tracciamento dei giocatori e il conteggio nelle ROI specificate, utilizzando **YOLO11** per la detection e BoT-SORT per il tracking, **integrando un filtraggio avanzato basato sul colore del campo (HSV)**.
 ### 📋 Requisiti
 Il progetto è stato sviluppato e testato su Python 3.8+.
 
@@ -12,7 +11,7 @@ Eseguire il seguente comando per installare tutte le librerie necessarie:
 pip install -r requirements.txt
 ```
 
-(Nota: Il file requirements.txt deve includere: `ultralytics , opencv-python, numpy, pandas, pyyaml, tqdm, lapx, scipy`)
+(Nota: Il file requirements.txt deve includere: `ultralytics , opencv-python, numpy, pandas, pyyaml, tqdm, trackeval`)
 
 ---
 
@@ -39,6 +38,18 @@ project_root/
 ├── src/                      <-- Codice sorgente
 └── main.py                   <-- Script principale
 ```
+---
+### 🛠️ Setup Iniziale (Preparazione Dati)
+Prima di eseguire il tracking o la valutazione, è necessario preparare il dataset. **Si noti che questo procedimento è stato implementato solo perché il dataset a noi fornito non era già pronto; in caso di dataset già pronto, questa operazione non deve essere eseguita.**
+
+Questa modalità si occupa di estrarre gli archivi, standardizzare i nomi delle cartelle (rimuovendo il prefisso "SNMOT-"), distribuire i file ROI e generare la Ground Truth necessaria per l'analisi del comportamento.
+
+```bash
+python main.py --mode prepare
+```
+
+_Nota_: Durante questo processo, la classe "Ball" viene rimossa dai file di Ground Truth per ottimizzare il tracciamento dei soli soggetti umani.
+
 ---
 ### 🚀 Esecuzione (Setup di Gara)
 Per avviare l'elaborazione completa (Tracking + Behavior Analysis) su tutti i video presenti nella cartella di test, eseguire il comando:
