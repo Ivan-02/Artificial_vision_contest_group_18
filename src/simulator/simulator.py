@@ -18,7 +18,7 @@ if not hasattr(np, "int"):
 if not hasattr(np, "bool"):
     np.bool = bool
 
-from .original_evalutation_helper import compute_nmae_from_behavior_files, compute_hota_at_05_trackeval, build_trackeval_structure, list_video_ids, natural_key
+from original_evalutation_helper import compute_nmae_from_behavior_files, compute_hota_at_05_trackeval, build_trackeval_structure, list_video_ids, natural_key
 
 # ============================================================
 # IO helpers for MOT-style tracking text files (10 columns)
