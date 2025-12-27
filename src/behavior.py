@@ -20,15 +20,12 @@ class BehaviorAnalyzer:
         print("[BehaviorAnalyzer] INIZIALIZZAZIONE PIPELINE")
         print(f"[BehaviorAnalyzer] {'=' * 50}")
 
-        # Inizializza il tracker (che gestisce modello e inferenza)
         self.tracker = Tracker(config, conf_mode)
 
-        # --- 1. Setup Output Manager ---
         base_out = os.path.join(self.cfg['paths']['output_submission'], conf_mode['test_name'], "behavior")
         self.reporter = ReportManager(base_out)
         print(f"[BehaviorAnalyzer] [INIT] Output directory: {base_out}")
 
-        # --- 2. Setup Visualizer ---
         self.enable_display = self.conf_mode.get('display', False)
         if self.enable_display:
             print(f"[BehaviorAnalyzer] [INIT] Visualizzazione: ATTIVA (Width: {self.conf_mode['display_width']}px)")
@@ -47,7 +44,6 @@ class BehaviorAnalyzer:
 
         self.run_eval = conf_mode.get('eval', False)
 
-        # Mappa colori specifica per la logica Behavior
         self.colors = {
             'default': (0, 0, 255),  # Rosso
             'roi1': (0, 255, 255),  # Giallo
@@ -57,7 +53,6 @@ class BehaviorAnalyzer:
         self.reporter.update_json_section("configuration", self.conf_mode)
 
     def _load_rois(self, video_folder):
-        """Carica le ROI specifiche per il video (o usa fallback)."""
         json_path = self.cfg['paths']['roi']
         fallback = {
             "roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
@@ -120,7 +115,6 @@ class BehaviorAnalyzer:
                     field_contour = None
 
                     if self.field_filter:
-                        # Usiamo img originale per il calcolo per consistenza
                         final_detections, field_contour = self.field_filter.filter_detections(img, detections)
 
                     count_roi1 = 0
@@ -139,7 +133,7 @@ class BehaviorAnalyzer:
 
                         if GeometryUtils.is_in_roi(det['xywh'], rois_data.get('roi2'), w_img, h_img):
                             count_roi2 += 1
-                            if not in_roi:  # Se non era già nella 1, coloralo come 2
+                            if not in_roi:
                                 assigned_color = self.colors['roi2']
 
                         if self.vis and display_img is not None:
@@ -150,11 +144,7 @@ class BehaviorAnalyzer:
 
                     self.reporter.save_txt_results(output_filename, frame_lines, append=True)
 
-                    # --- VISUALIZZAZIONE ---
                     if self.vis and display_img is not None:
-                        # 1. Disegna ROI e Box PRIMA del filtro
-                        # Questo perché se il filtro fa il mosaico, ridimensiona l'immagine.
-                        # Disegniamo sul frame originale Full HD
                         current_counts = {'roi1': count_roi1, 'roi2': count_roi2}
                         for key, roi_def in rois_data.items():
                             c_val = current_counts.get(key, 0)
@@ -170,12 +160,9 @@ class BehaviorAnalyzer:
                                 color=color
                             )
 
-                        # 2. Applica la visualizzazione debug del Field Filter (Overlay o Mosaico)
                         if self.field_filter:
-                             # Questo metodo potrebbe ritornare un mosaico 2x2 o l'immagine con contorno
                              display_img = self.field_filter.draw_debug(display_img, field_contour)
 
-                        # 3. Mostra il risultato
                         if not self.vis.show_frame(window_name, display_img):
                             tqdm.write(f"\n[BehaviorAnalyzer] [STOP] Interruzione utente su video: {video_name}")
                             stop_execution = True
@@ -187,7 +174,6 @@ class BehaviorAnalyzer:
 
             except Exception as e:
                 tqdm.write(f"[BehaviorAnalyzer] [ERROR] Errore su {video_name}: {e}")
-                # traceback.print_exc()
 
             finally:
                 if self.vis:

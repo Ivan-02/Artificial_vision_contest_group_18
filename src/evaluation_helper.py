@@ -11,10 +11,6 @@ import numpy as np
 
 @contextmanager
 def suppress_stdout():
-    """
-    Context manager per ridirigere stdout su devnull.
-    Utile per zittire librerie "chiacchierone" come TrackEval.
-    """
     with open(os.devnull, "w") as devnull:
         old_stdout = sys.stdout
         sys.stdout = devnull
@@ -25,7 +21,6 @@ def suppress_stdout():
 
 
 def natural_key(path: str) -> int:
-    """Extracts numeric frame index from a file path for natural sorting."""
     name = os.path.basename(path)
     try:
         return int(name.split(".")[0])
@@ -50,16 +45,7 @@ def _read_behavior(path: str) -> Dict[Tuple[int, int], int]:
         return {}
     return out
 
-
-# ============================================================
-# BEHAVIOR EVALUATION (Silent)
-# ============================================================
-
 def compute_nmae_from_behavior_files(dataset_root: str, predictions_root: str, group: str) -> dict:
-    """
-    Computes MAE and nMAE.
-    MODIFIED: No prints. Returns None/False if data is missing, letting the caller handle logs.
-    """
     abs_err_sum = 0.0
     n = 0
 
@@ -91,18 +77,12 @@ def compute_nmae_from_behavior_files(dataset_root: str, predictions_root: str, g
             n += 1
 
     if n == 0:
-        # REMOVED PRINT: print(f"ATTENZIONE: Nessun file behavior valido...")
         return {"has_behavior": False, "MAE": None, "nMAE": None}
 
     mae = abs_err_sum / n
     nmae = (10.0 - min(10.0, max(0.0, mae))) / 10.0
 
     return {"has_behavior": True, "MAE": mae, "nMAE": nmae}
-
-
-# ============================================================
-# TRACKING HELPERS (Silent)
-# ============================================================
 
 def ensure_10col_and_force_class1(src_txt: str, dst_txt: str) -> None:
     Path(dst_txt).parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +104,7 @@ def ensure_10col_and_force_class1(src_txt: str, dst_txt: str) -> None:
             tid = parts[1]
             x, y, w, h = parts[2:6]
             conf = parts[6] if len(parts) >= 7 else "1"
-            cls = "1"  # force pedestrian
+            cls = "1"
             vis = parts[8] if len(parts) >= 9 else "-1"
             z = parts[9] if len(parts) >= 10 else "-1"
 
@@ -171,10 +151,6 @@ def build_trackeval_structure(
         benchmark: str = "SNMOT",
         tracker_name: str = "test",
 ) -> Tuple[str, str, str]:
-    """
-    Creates temp structure for TrackEval.
-    MODIFIED: Silent execution.
-    """
     tmp_root = os.path.abspath(tmp_root)
     if os.path.exists(tmp_root):
         shutil.rmtree(tmp_root)
@@ -206,7 +182,6 @@ def build_trackeval_structure(
             continue
 
         if not os.path.isfile(src_gt):
-            # REMOVED PRINT: print(f"Warning: Missing GT...")
             continue
 
         frame_paths = sorted(glob.glob(os.path.join(src_img1, "*.jpg")), key=natural_key)
@@ -232,8 +207,6 @@ def build_trackeval_structure(
 
         valid_seqs.append(seq)
 
-    # REMOVED PRINT: if not valid_seqs: print("ATTENZIONE...")
-
     seqmap_file = os.path.join(sm_folder, f"{bench_split}.txt")
     with open(seqmap_file, "w") as f:
         f.write("name\n")
@@ -243,10 +216,6 @@ def build_trackeval_structure(
     return gt_folder, tr_folder, seqmap_file
 
 
-# ============================================================
-# TRACKEVAL WRAPPERS (Silent)
-# ============================================================
-
 def compute_metrics_with_details(
         gt_folder: str,
         trackers_folder: str,
@@ -255,15 +224,11 @@ def compute_metrics_with_details(
         benchmark: str = "SNMOT",
         tracker_name: str = "test",
 ) -> List[Dict]:
-    """
-    Runs TrackEval silently using suppress_stdout.
-    """
-    # Configurazione TrackEval
     eval_config = trackeval.Evaluator.get_default_eval_config()
     eval_config["DISPLAY_LESS_PROGRESS"] = True
     eval_config["PRINT_RESULTS"] = False
     eval_config["PRINT_ONLY_COMBINED"] = False
-    eval_config["PRINT_CONFIG"] = False  # Aggiunto per ridurre ulteriore output
+    eval_config["PRINT_CONFIG"] = False
 
     dataset_config = trackeval.datasets.MotChallenge2DBox.get_default_dataset_config()
     dataset_config.update({
@@ -280,9 +245,6 @@ def compute_metrics_with_details(
 
     metrics_config = {"METRICS": ["HOTA", "CLEAR"]}
 
-    # --- WRAPPING DI SILENZIAMENTO ---
-    # TrackEval stampa comunque su stdout anche con i flag a False.
-    # Usiamo il context manager per bloccare tutto durante l'esecuzione.
     with suppress_stdout():
         try:
             evaluator = trackeval.Evaluator(eval_config)
@@ -297,15 +259,11 @@ def compute_metrics_with_details(
 
             output_res, _ = evaluator.evaluate(dataset_list, metrics_list)
         except Exception:
-            # Se trackeval fallisce, ritorna lista vuota
             return []
-    # ---------------------------------
 
-    # Estrazione Dati (nessuna print qui)
     hota_metric = trackeval.metrics.HOTA()
     alphas = np.array(hota_metric.array_labels, dtype=float)
 
-    # Check if we have results
     if "MotChallenge2DBox" not in output_res:
         return []
 

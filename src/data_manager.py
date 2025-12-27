@@ -8,16 +8,12 @@ from tqdm import tqdm
 import json
 from .common.data_utils import GameInfoParser, GeometryUtils
 
-
 class DataManager:
 
     def __init__(self, config):
         self.cfg = config
         self.raw_data_path = self.cfg['paths']['raw_data']
         self.yolo_dataset_path = self.cfg['paths']['yolo_dataset']
-
-        # Non stampiamo nulla nell'init per non sporcare se la classe viene solo istanziata.
-        # Le stampe avverranno chiamando prepare_dataset.
 
     def prepare_dataset(self):
         print(f"\n[DataManager] {'=' * 50}")
@@ -26,21 +22,15 @@ class DataManager:
         print(f"[DataManager] Raw Data Path : {self.raw_data_path}")
         print(f"[DataManager] YOLO Output   : {self.yolo_dataset_path}")
 
-        # --- FASE 1: UNZIP ---
         print("\n[DataManager] [1/7] Estrazione archivi ZIP...")
         self._unzip_and_delete(self.raw_data_path, self.raw_data_path)
 
-        # --- FASE 2: RENAME FOLDERS ---
-        # 1. Rinomina le cartelle NSMOT-XX -> XX
         print("\n[DataManager] [2/7] Standardizzazione nomi cartelle...")
         self._rename_video_folders()
 
-        # --- FASE 3: DISTRIBUZIONE ROI ---
-        # 2. Distribuzione del file roi.json nelle sottocartelle
         print("\n[DataManager] [3/7] Distribuzione configurazioni ROI...")
         self._distribute_roi_json()
 
-        # --- FASE 4: CONVERSIONE YOLO ---
         print("\n[DataManager] [4/7] Conversione formato MOT -> YOLO...")
         subsets = ['train', 'test']
         found_any = False
@@ -61,15 +51,12 @@ class DataManager:
             print("[DataManager]     Tento conversione nella root come 'train'...")
             self._convert_mot_to_yolo(self.raw_data_path, self.yolo_dataset_path, sub_folder='train')
 
-        # --- FASE 5: CREAZIONE YAML ---
         print("\n[DataManager] [5/7] Generazione dataset.yaml...")
         self._create_yolo_yaml()
 
-        # --- FASE 6: GENERAZIONE BEHAVIOR GT ---
         print("\n[DataManager] [6/7] Generazione Ground Truth per Behavior Analysis...")
         self.prepare_behavior_gt()
 
-        # --- FASE 7: CLEANING (Remove Ball) ---
         print("\n[DataManager] [7/7] Pulizia classi (Rimozione 'Ball' dalla GT)...")
         self.remove_ball_from_all_gt()
 
@@ -78,10 +65,6 @@ class DataManager:
         print(f"[DataManager] {'=' * 50}\n")
 
     def rename_video_folders(self):
-        """
-        Scansiona le cartelle train/test e rinomina le cartelle video
-        da 'SNMOT-XX' a 'XX'.
-        """
         subsets = ['train', 'test']
         count = 0
 
@@ -90,17 +73,14 @@ class DataManager:
             if not os.path.exists(subset_path):
                 continue
 
-            # Itera sulle cartelle
             for folder_name in os.listdir(subset_path):
                 folder_path = os.path.join(subset_path, folder_name)
 
                 if os.path.isdir(folder_path) and folder_name.startswith("SNMOT-"):
-                    # Estrae l'indice (es. SNMOT-01 -> 01)
                     try:
                         new_name = folder_name.split('-')[1]
                         new_path = os.path.join(subset_path, new_name)
 
-                        # Evita sovrascritture se la cartella esiste già
                         if not os.path.exists(new_path):
                             os.rename(folder_path, new_path)
                             count += 1
@@ -115,13 +95,7 @@ class DataManager:
             print(f"[DataManager]       Nessuna cartella da rinominare trovata.")
 
     def _distribute_roi_json(self):
-        """
-        Copia il file roi.json:
-        1. In ogni sottocartella (train/test).
-        2. All'interno di ogni cartella video in train/test.
-        """
-        source_roi = os.path.join('./configs', 'roi.json')  # Path relativo come richiesto
-        # Fallback se non lo trova nel path relativo, prova a usare config se definito
+        source_roi = os.path.join('./configs', 'roi.json')
         if not os.path.exists(source_roi) and 'roi' in self.cfg['paths']:
             source_roi = self.cfg['paths']['roi']
 
@@ -137,11 +111,9 @@ class DataManager:
             if not os.path.exists(subset_path):
                 continue
 
-            # 1. Copia nella root del subset (es. raw_data/train/roi.json)
             dst_subset = os.path.join(subset_path, 'roi.json')
             shutil.copy(source_roi, dst_subset)
 
-            # 2. Copia in ogni cartella video
             video_folders = [f for f in os.listdir(subset_path) if os.path.isdir(os.path.join(subset_path, f))]
             for video_name in video_folders:
                 video_path = os.path.join(subset_path, video_name)
@@ -152,11 +124,6 @@ class DataManager:
         print(f"[DataManager]       ROI distribuito in {count} cartelle video.")
 
     def prepare_behavior_gt(self):
-        """
-        Genera i file di Ground Truth per la behavior analysis.
-        Input: ROI json (self.cfg['paths']['roi'])
-        Output: behavior_XX_gt.txt nella cartella gt di ogni video.
-        """
         roi_path = self.cfg['paths']['roi']
         if not os.path.exists(roi_path):
             print(f"[DataManager] [ERROR] File ROI non trovato in {roi_path}")
@@ -174,7 +141,6 @@ class DataManager:
 
             video_folders = [f for f in os.listdir(subset_path) if os.path.isdir(os.path.join(subset_path, f))]
 
-            # TQDM gestisce la barra, printiamo errori solo se necessario
             for video_name in tqdm(video_folders, desc=f"[DataManager] Gen Behavior {subset}", unit="vid"):
                 video_path = os.path.join(subset_path, video_name)
                 gt_folder = os.path.join(video_path, 'gt')
@@ -201,7 +167,6 @@ class DataManager:
                     tqdm.write(f"[DataManager] [ERROR] Errore lettura GT per {video_name}: {e}")
                     continue
 
-                # Recupero dimensioni immagine per normalizzazione/verifica ROI
                 h_img, w_img = 1080, 1920
                 if os.path.exists(img_dir):
                     images = os.listdir(img_dir)
@@ -223,16 +188,11 @@ class DataManager:
                             if obj_id in ball_ids:
                                 continue
 
-                            # 2. Conversione Coordinate per GeometryUtils
-                            # GT fornisce Top-Left (x, y), GeometryUtils si aspetta Center (cx, cy)
-                            # per calcolare correttamente i "piedi" (base_y).
                             cx = row['x'] + (row['w'] / 2.0)
                             cy = row['y'] + (row['h'] / 2.0)
 
-                            # Creiamo il box formato [cx, cy, w, h]
                             box_xywh = [cx, cy, row['w'], row['h']]
 
-                            # 3. Verifica inclusione usando GeometryUtils
                             if GeometryUtils.is_in_roi(box_xywh, rois.get('roi1'), w_img, h_img):
                                 counts[1] += 1
                             elif GeometryUtils.is_in_roi(box_xywh, rois.get('roi2'), w_img, h_img):
@@ -243,20 +203,18 @@ class DataManager:
                         f_out.flush()
 
     def _create_yolo_yaml(self):
-        """Crea il file dataset.yaml per YOLO."""
         yaml_path = os.path.join(self.yolo_dataset_path, 'dataset.yaml')
         abs_path = os.path.abspath(self.yolo_dataset_path)
 
         data = {
             'path': abs_path,
             'train': 'images/train',
-            'val': 'images/train',  # Default fallback
+            'val': 'images/train',
             'test': 'images/test',
             'nc': 4,
             'names': {0: 'player_uf', 1: 'goalkeeper', 2: 'player', 3: 'referee'}
         }
 
-        # Gestione path validazione intelligente
         if not os.path.exists(os.path.join(abs_path, 'images', 'test')):
             if 'test' in data: del data['test']
 
@@ -301,7 +259,6 @@ class DataManager:
         for video_name in tqdm(video_folders, desc=f"[DataManager] Convert {sub_folder}", unit="vid"):
             video_path = os.path.join(source_dir, video_name)
 
-            # Utilizzo Parser condiviso
             ini_path = os.path.join(video_path, 'gameinfo.ini')
             id_to_label = GameInfoParser.get_id_map(ini_path)
 
@@ -325,14 +282,12 @@ class DataManager:
 
                 if os.path.exists(label_file): continue
 
-                # Gestione estensioni immagine
                 img_name_base = f"{int(frame_id):06d}"
                 src_img = os.path.join(img_dir, img_name_base + ".jpg")
                 if not os.path.exists(src_img):
                     src_img = os.path.join(img_dir, img_name_base + ".png")
                 if not os.path.exists(src_img): continue
 
-                # Lettura dimensione immagine necessaria per normalizzazione
                 img = cv2.imread(src_img)
                 if img is None: continue
                 h_img, w_img = img.shape[:2]
@@ -342,7 +297,6 @@ class DataManager:
                     obj_id = int(row['obj_id'])
                     label_str = id_to_label.get(obj_id, "unknown")
 
-                    # Logica Mapping Classi
                     final_class_id = -1
                     if "ball" in label_str:
                         final_class_id = 0
@@ -355,13 +309,11 @@ class DataManager:
 
                     if final_class_id == -1: continue
 
-                    # Conversione coordinate: TopLeft -> Center + Normalizzazione
                     x_c = (row['x'] + row['w'] / 2) / w_img
                     y_c = (row['y'] + row['h'] / 2) / h_img
                     w_n = row['w'] / w_img
                     h_n = row['h'] / h_img
 
-                    # Clamping [0, 1]
                     x_c = max(0, min(1, x_c))
                     y_c = max(0, min(1, y_c))
                     w_n = max(0, min(1, w_n))
@@ -373,7 +325,6 @@ class DataManager:
                     with open(label_file, 'w') as f:
                         f.write('\n'.join(yolo_lines))
 
-                    # Symlink o copia immagine
                     ext = os.path.splitext(src_img)[1]
                     dst_img = os.path.join(images_out, unique_name + ext)
 
@@ -388,12 +339,6 @@ class DataManager:
                         shutil.copy(os.path.abspath(src_img), os.path.abspath(dst_img))
 
     def remove_ball_from_all_gt(self):
-        """
-        Versione OTTIMIZZATA:
-        1. Itera su tutti i video.
-        2. Se trova 'gt.txt.bak', SALTA il video (già processato).
-        3. Se non lo trova, rimuove la palla e crea il backup.
-        """
         subsets = ['train', 'test']
         total_modified = 0
         total_skipped = 0
@@ -412,17 +357,14 @@ class DataManager:
                 backup_path = gt_path + ".bak"  # Percorso del backup
                 ini_path = os.path.join(video_path, 'gameinfo.ini')
 
-                # 1. CONTROLLO SKIP: Se esiste il backup, il video è già fatto.
                 if os.path.exists(backup_path):
                     total_skipped += 1
                     continue
 
-                # Controllo esistenza file sorgenti
                 if not os.path.exists(gt_path) or not os.path.exists(ini_path):
                     continue
 
                 try:
-                    # 2. Logica di rimozione (eseguita solo se non c'è backup)
                     id_map = GameInfoParser.get_id_map(ini_path)
                     ball_ids = [k for k, v in id_map.items() if "ball" in str(v).lower()]
 
@@ -438,9 +380,8 @@ class DataManager:
                     df_clean = df[~df['obj_id'].isin(ball_ids)]
                     new_count = len(df_clean)
 
-                    # 3. Salvataggio e creazione backup
                     if new_count < original_count:
-                        shutil.copy(gt_path, backup_path)  # Crea il backup ORA
+                        shutil.copy(gt_path, backup_path)
                         df_clean.to_csv(gt_path, header=False, index=False)
                         total_modified += 1
                     else:

@@ -24,18 +24,15 @@ class Tracker:
 
         self._check_keys()
 
-        # Caricamento Modello
         weights_path = self.cfg['paths']['model_weights']
         print(f"[Tracker] [INIT] Caricamento modello YOLO...")
         print(f"[Tracker]        Path: {os.path.basename(weights_path)}")
         self.model = YOLO(weights_path)
 
-        # Setup Output
         base_out = os.path.join(self.cfg['paths']['output_submission'], self.cfg_mode['test_name'], "track")
         self.reporter = ReportManager(base_out)
         print(f"[Tracker] [INIT] Output directory: {base_out}")
 
-        # Visualizzazione
         self.enable_display = self.cfg_mode['display'] or self.cfg_mode.get('show', False)
         if self.enable_display:
             print(f"[Tracker] [INIT] Visualizzazione: ATTIVA (Width: {self.cfg_mode['display_width']}px)")
@@ -44,11 +41,8 @@ class Tracker:
             print(f"[Tracker] [INIT] Visualizzazione: DISATTIVA (Headless Mode)")
             self.vis = None
 
-        # Field Filter - Passiamo i settings completi
         if FieldFilter:
-            # Recupera i settings dal config, default vuoto se manca
             field_settings = self.cfg_mode.get('field_det_settings', {})
-            # Forza enabled se siamo qui, ma passiamo tutto il dizionario
             self.field_filter = FieldFilter(settings=field_settings)
             print(f"[Tracker] [INIT] FieldFilter: Caricato")
         else:
@@ -65,7 +59,6 @@ class Tracker:
         self.run_hota = self.cfg_mode['eval']
         self.specific_video = self.cfg_mode.get('specific_video', None)
 
-        # Generazione YAML temporaneo
         self.tracker_yaml_path = self.cfg['paths'].get('temp_tracker_yaml', './temp_tracker.yaml')
         os.makedirs(os.path.dirname(self.tracker_yaml_path), exist_ok=True)
         with open(self.tracker_yaml_path, 'w') as f:
@@ -221,14 +214,9 @@ class Tracker:
                     final_detections = detections
                     field_contour = None
 
-                    # Filtraggio campo
                     if self.field_filter:
-                        # Nota: Passiamo display_img se esiste per permettere disegni di debug interni se necessario,
-                        # ma il filtro lavora meglio su clean frames solitamente.
-                        # Qui usiamo orig_img per il calcolo, display_img per il disegno dopo.
                         final_detections, field_contour = self.field_filter.filter_detections(orig_img, detections)
 
-                    # Preparazione Output e Disegno Box Tracker
                     for det in final_detections:
                         x_c, y_c, w, h = det['xywh']
                         x1 = x_c - (w / 2)
@@ -245,15 +233,11 @@ class Tracker:
                                 conf=det['conf']
                             )
 
-                    # Scrittura su file (append)
                     if frame_lines:
                         self.reporter.save_txt_results(output_filename, frame_lines, append=True)
 
-                    # --- VISUALIZZAZIONE ---
                     if self.vis and display_img is not None:
-                        # Applichiamo la visualizzazione del filtro (Mosaico o Overlay)
                         if self.field_filter:
-                            # Importante: Assegniamo il risultato perché potrebbe essere un mosaico
                             display_img = self.field_filter.draw_debug(display_img, field_contour)
 
                         if not self.vis.show_frame(window_name, display_img):

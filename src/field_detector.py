@@ -23,22 +23,18 @@ class FieldFilter:
         self.kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_dilate, k_dilate))
         self.kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (k_close, k_close))
 
-        # --- PARAMETRI PROCESSO ---
         self.alpha = settings.get('alpha_smooth', 0.7)
         self.binary_threshold = settings.get('binary_threshold', 100)
         self.min_area_ratio = settings.get('min_area_ratio', 0.01)
         self.poly_epsilon = settings.get('poly_epsilon', 0.01)
         self.show_mosaic = settings.get('debug_mosaic', False)
 
-        # --- PARAMETRI LOGICA GENERALE ---
         self.pixel_check_radius = settings.get('pixel_check_radius', 5)
         self.pixel_check_ratio = settings.get('pixel_check_ratio', 0.1)
         self.bottom_zone_ratio = settings.get('bottom_zone_ratio', 0.80)
         self.strong_conf_thresh = settings.get('strong_conf_thresh', 0.75)
         self.safe_zone_dist = settings.get('safe_zone_dist', 30)
 
-        # --- NUOVI PARAMETRI: SOGLIE DETECTION ---
-        # Default messi come i valori hardcoded originali per sicurezza
         self.clipping_margin = settings.get('clipping_margin', 5)
         self.pixel_check_offset = settings.get('pixel_check_offset', 10)
 
@@ -46,17 +42,14 @@ class FieldFilter:
         self.thresh_bottom = settings.get('thresh_bottom', 5.0)
         self.thresh_std = settings.get('thresh_standard', -2.0)
 
-        # Stato interno
         self.prev_mask = None
         self.current_binary_mask = None
 
-        # Debug steps
         self.step1_hsv = None
         self.step2_morph = None
         self.step3_filled = None
 
     def _get_field_contour(self, frame):
-        # (Codice identico alla versione precedente)
         blurred = cv2.GaussianBlur(frame, (5, 5), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         curr_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
@@ -123,7 +116,6 @@ class FieldFilter:
         filtered_detections = []
         img_h, img_w = frame.shape[:2]
 
-        # Limite Y per la zona bassa (parametro bottom_zone_ratio)
         bottom_limit_y = img_h * self.bottom_zone_ratio
 
         for det in detections:
@@ -133,23 +125,18 @@ class FieldFilter:
 
             dist = cv2.pointPolygonTest(field_contour, (float(feet_x), float(feet_y)), True)
 
-            # --- USO DEI PARAMETRI DINAMICI ---
-            # Verifica se i piedi sono nel margine inferiore (clipping)
             is_clipping_bottom = feet_y >= (img_h - self.clipping_margin)
 
-            # Selezione della soglia in base alla posizione
             if is_clipping_bottom:
-                threshold = self.thresh_clipping  # Es: -5.0
+                threshold = self.thresh_clipping
             elif feet_y > bottom_limit_y:
-                threshold = self.thresh_bottom  # Es: 5.0
+                threshold = self.thresh_bottom
             else:
-                threshold = self.thresh_std  # Es: -2.0
+                threshold = self.thresh_std
 
             is_geometrically_inside = dist >= threshold
 
-            # Pixel Check con offset dinamico
             if is_clipping_bottom:
-                # Se tagliato in basso, controlliamo un po' più su
                 safe_y = max(0, feet_y - self.pixel_check_offset)
                 is_ground_green = self._check_pixel_under_feet(feet_x, safe_y, img_w, img_h)
             else:
@@ -158,8 +145,7 @@ class FieldFilter:
             strong_detection = det['conf'] > self.strong_conf_thresh
             condition_safe_zone = (dist > self.safe_zone_dist)
 
-            if is_geometrically_inside and (
-                    is_ground_green or condition_safe_zone or (is_clipping_bottom and strong_detection)):
+            if is_geometrically_inside and (is_ground_green or condition_safe_zone or (is_clipping_bottom and strong_detection)):
                 filtered_detections.append(det)
                 final_decision = True
             else:
@@ -168,34 +154,26 @@ class FieldFilter:
             if self.debug:
                 color = (0, 255, 0) if final_decision else (0, 0, 255)
                 cv2.circle(frame, (feet_x, feet_y), 5, color, -1)
-                # Visualizza info di debug se nella zona critica
                 if feet_y > bottom_limit_y:
                     info = f"Cut:{int(is_clipping_bottom)}"
-                    cv2.putText(frame, info, (feet_x - 20, feet_y - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+                    cv2.putText(frame, info, (feet_x - 20, feet_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
 
         return filtered_detections, field_contour
 
     def draw_debug(self, frame, contour):
-        """
-        Gestisce la visualizzazione: Mosaico 4 quadranti O Overlay semplice.
-        """
         if not self.debug:
             return frame
 
         vis_frame = frame.copy()
 
-        # Disegno sempre il contorno verde finale
         if contour is not None:
             cv2.drawContours(vis_frame, [contour], -1, (0, 255, 0), 2)
             if not self.show_mosaic:
                 cv2.putText(vis_frame, "FIELD FILTER ACTIVE", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-        # SE MOSAICO DISATTIVATO: Ritorna solo l'immagine con il contorno
         if not self.show_mosaic:
             return vis_frame
 
-        # --- SEZIONE MOSAICO (Se debug_mosaic: True) ---
         def prepare_mask(mask, label):
             if mask is None:
                 blank = np.zeros_like(frame)
@@ -212,7 +190,6 @@ class FieldFilter:
         h, w = frame.shape[:2]
         new_dim = (int(w * 0.5), int(h * 0.5))
 
-        # Nota: vis_frame ha già i box del tracker disegnati sopra perché viene passato dopo
         top_left = cv2.resize(vis_frame, new_dim)
         top_right = cv2.resize(img_hsv, new_dim)
         bot_left = cv2.resize(img_morph, new_dim)

@@ -16,19 +16,13 @@ class Evaluator:
         self.trackeval_tmp_root = os.path.join(self.base_output_dir, "_tmp_trackeval_wrapper")
 
     def run_behavior(self):
-        """
-        Wrapper per il calcolo nMAE Ufficiale.
-        Mantiene la firma originale ma usa la logica ufficiale internamente.
-        """
         print(f"\n[Evaluator] {'=' * 50}")
         print("[Evaluator] AVVIO: BEHAVIOR ANALYSIS (nMAE)")
         print(f"[Evaluator] {'=' * 50}")
 
-        # Iteriamo sulle sottocartelle (es. test/behavior)
         for subdir in self.subdirs:
             print(f"\n[Evaluator] >>> Elaborazione directory: {subdir}")
 
-            # Directory dove si trovano i tuoi file .txt generati
             pred_dir = os.path.join(self.base_output_dir, subdir)
             if not os.path.exists(pred_dir):
                 print(f"[Evaluator] [!] ATTENZIONE: Cartella predizioni non trovata -> {pred_dir}")
@@ -36,11 +30,9 @@ class Evaluator:
 
             reporter = ReportManager(pred_dir)
 
-            # --- CHIAMATA AL CODICE UFFICIALE ---
             group_str = str(self.team_name)
 
             try:
-                # La funzione ufficiale vuole: dataset_root, predictions_root, group
                 results = compute_nmae_from_behavior_files(
                     dataset_root=self.gt_base_dir,
                     predictions_root=pred_dir,
@@ -58,7 +50,6 @@ class Evaluator:
                     print(f"[Evaluator]     nMAE : {nmae:.4f}")
                     print(f"[Evaluator]     -------------------------------")
 
-                    # --- AGGIORNAMENTO REPORT ---
                     report_update = {
                         "OFFICIAL_SCORES": {
                             "MAE": round(mae, 6),
@@ -68,7 +59,6 @@ class Evaluator:
                     reporter.update_json_section("evaluation_results", report_update)
                     print(f"[Evaluator] [✔] Report JSON aggiornato: {os.path.basename(reporter.json_path)}")
 
-                    # (Opzionale) Se vuoi salvare anche un CSV riassuntivo
                     csv_data = [{'Metric': 'nMAE', 'Score': nmae}, {'Metric': 'MAE', 'Score': mae}]
                     pd.DataFrame(csv_data).to_csv(os.path.join(pred_dir, 'official_behavior_metrics.csv'), index=False)
                 else:
@@ -78,9 +68,6 @@ class Evaluator:
                 print(f"[Evaluator] [ERROR] Errore critico Behavior Analysis: {e}")
 
     def run_hota(self):
-        """
-        Wrapper Ufficiale TrackEval che salva anche il CSV dettagliato.
-        """
         print(f"\n[Evaluator] {'=' * 50}")
         print("[Evaluator] AVVIO: TRACKING ANALYSIS (HOTA)")
         print(f"[Evaluator] {'=' * 50}")
@@ -99,7 +86,6 @@ class Evaluator:
             split_name = self.cfg['paths'].get('split_name', 'test')
 
             try:
-                # 1. Costruzione Struttura
                 print("[Evaluator]     [1/3] Costruzione struttura temporanea TrackEval...")
                 gt_folder, tr_folder, seqmap_file = build_trackeval_structure(
                     dataset_root=self.gt_base_dir,
@@ -112,7 +98,6 @@ class Evaluator:
                     tracker_name="test"
                 )
 
-                # 2. Calcolo Metriche
                 print("[Evaluator]     [2/3] Esecuzione TrackEval e calcolo metriche...")
                 detailed_results = compute_metrics_with_details(
                     gt_folder=gt_folder,
@@ -123,12 +108,10 @@ class Evaluator:
                     tracker_name="test"
                 )
 
-                # 3. Creazione e Salvataggio CSV
                 if detailed_results:
                     print("[Evaluator]     [3/3] Elaborazione risultati finali...")
                     df = pd.DataFrame(detailed_results)
 
-                    # Riorganizziamo le colonne per leggibilità
                     cols = ['Video', 'HOTA', 'DetA', 'AssA', 'MOTA', 'TP', 'FN', 'FP']
                     cols = [c for c in cols if c in df.columns]
                     df = df[cols]
@@ -137,7 +120,6 @@ class Evaluator:
                     df.to_csv(csv_path, index=False)
                     print(f"[Evaluator] [✔] CSV dettagliato salvato: {os.path.basename(csv_path)}")
 
-                    # Estraiamo HOTA globale per il log JSON
                     global_row = df[df['Video'] == 'GLOBAL_SCORE']
                     if not global_row.empty:
                         final_hota = global_row.iloc[0]['HOTA']
@@ -146,7 +128,6 @@ class Evaluator:
                         print(f"[Evaluator]     GLOBAL HOTA SCORE: {final_hota:.6f}")
                         print(f"[Evaluator]     -------------------------------")
 
-                        # Aggiornamento JSON
                         report_update = {
                             "OFFICIAL_SCORES": {
                                 "HOTA_05": round(final_hota, 6),

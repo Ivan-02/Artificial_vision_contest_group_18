@@ -8,7 +8,6 @@ class ReportManager:
         self.json_path = os.path.join(self.output_dir, "execution_report.json")
 
     def save_txt_results(self, filename, lines, append=False):
-        """Scrive o appende linee a un file di testo."""
         mode = 'a' if append else 'w'
         path = os.path.join(self.output_dir, filename)
         try:
@@ -18,7 +17,6 @@ class ReportManager:
             print(f"Errore scrittura {filename}: {e}")
 
     def load_json_report(self):
-        """Carica il JSON esistente o ne crea uno vuoto."""
         if os.path.exists(self.json_path):
             try:
                 with open(self.json_path, 'r') as f:
@@ -28,13 +26,11 @@ class ReportManager:
         return {}
 
     def update_json_section(self, section_key, data_dict):
-        """Aggiorna una sezione specifica del JSON e salva."""
         current_data = self.load_json_report()
 
         if section_key not in current_data:
             current_data[section_key] = {}
 
-        # Merge ricorsivo o semplice update
         current_data[section_key].update(data_dict)
 
         try:
