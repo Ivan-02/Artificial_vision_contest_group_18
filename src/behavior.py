@@ -12,7 +12,17 @@ from .field_detector import FieldFilter
 
 
 class BehaviorAnalyzer:
+    """
+        Gestisce la pipeline di behavior analisys, coordinando il tracking degli oggetti,
+        il filtraggio basato sul campo di gioco e il conteggio delle presenze all'interno
+        delle Region of Interest (ROI) configurate, producendo report e visualizzazioni.
+        """
+
     def __init__(self, config, conf_mode):
+        """
+        Inizializza le componenti principali (tracker, visualizer, report manager) e imposta
+        i percorsi di output e le configurazioni per il filtraggio del campo.
+        """
         self.cfg = config
         self.conf_mode = conf_mode
 
@@ -53,6 +63,11 @@ class BehaviorAnalyzer:
         self.reporter.update_json_section("configuration", self.conf_mode)
 
     def _load_rois(self, video_folder):
+        """
+        Carica i dati delle ROI da file JSON esterno; in caso di errore o file mancante,
+        restituisce un set di coordinate di fallback predefinito.
+        """
+
         json_path = self.cfg['paths']['roi']
         fallback = {
             "roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
@@ -69,6 +84,11 @@ class BehaviorAnalyzer:
             return fallback
 
     def run(self):
+        """
+        Avvia l'elaborazione sequenziale dei video: gestisce il ciclo frame-by-frame,
+        applica la logica di conteggio nelle ROI, aggiorna l'interfaccia grafica (se attiva)
+        e salva i risultati e le metriche di tempo su file.
+        """
         print(f"\n[BehaviorAnalyzer] {'=' * 50}")
         print("[BehaviorAnalyzer] AVVIO: BEHAVIOR ANALYSIS")
         print(f"[BehaviorAnalyzer] {'=' * 50}")

@@ -1,3 +1,8 @@
+"""
+Script principale (Entry Point) dell'applicazione: gestisce il parsing degli argomenti CLI,
+carica i file di configurazione YAML e avvia i diversi moduli della pipeline
+(tracking, validazione, analisi comportamentale o valutazione) in base alla modalità selezionata.
+"""
 import argparse
 from src.behavior import BehaviorAnalyzer
 from src.contest_runner import ContestRunner
@@ -9,6 +14,10 @@ import os
 
 
 def load_config(path):
+    """
+    Legge un file di configurazione in formato YAML dal percorso specificato
+    e ne restituisce il contenuto sotto forma di dizionario utilizzabile.
+    """
     with open(path, 'r') as f:
         return yaml.safe_load(f)
 
