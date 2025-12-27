@@ -9,7 +9,16 @@ from .behavior import BehaviorAnalyzer
 
 
 class ContestRunner:
+    """
+    Orchestra l'esecuzione simultanea della pipeline di tracking e dell'analisi del comportamento (Behavior),
+    gestendo l'elaborazione dei video e la generazione coordinata dei file di output per la competizione.
+    """
+
     def __init__(self, config, conf_mode):
+        """
+        Inizializza il runner configurando il tracker, i gestori dei report (ReportManager),
+        i sistemi di visualizzazione e i filtri spaziali per il campo da gioco.
+        """
         self.cfg = config
         self.conf_mode = conf_mode
 
@@ -39,9 +48,18 @@ class ContestRunner:
             self.field_filter = None
 
     def _load_rois(self, video_folder):
+        """
+        Carica le Region of Interest (ROI) specifiche per il video in esame, delegando l'operazione
+        alla logica definita nell'analizzatore di comportamento.
+        """
         return BehaviorAnalyzer._load_rois(self, video_folder)
 
     def run(self):
+        """
+        Esegue il ciclo principale di analisi su tutti i video: processa i frame, applica filtri spaziali,
+        esegue il conteggio degli oggetti nelle ROI e salva i risultati di tracking e behavior in formato testo.
+        """
+
         video_folders = self.tracker.get_video_list()
 
         for video_name in tqdm(video_folders, desc="[Contest] Progress", unit="vid"):

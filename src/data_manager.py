@@ -9,13 +9,25 @@ import json
 from .common.data_utils import GameInfoParser, GeometryUtils
 
 class DataManager:
+    """
+    Gestisce il ciclo di vita dei dati: dall'estrazione degli archivi grezzi alla
+    preparazione del dataset in formato YOLO, includendo la generazione delle Ground Truth per l'analisi del comportamento.
+    """
 
     def __init__(self, config):
+        """
+        Inizializza il manager dei dati impostando i percorsi sorgente (raw data)
+        e i percorsi di destinazione per il dataset pronto per l'addestramento.
+        """
         self.cfg = config
         self.raw_data_path = self.cfg['paths']['raw_data']
         self.yolo_dataset_path = self.cfg['paths']['yolo_dataset']
 
     def prepare_dataset(self):
+        """
+        Esegue l'intera pipeline di preparazione dati: estrazione, rinomina, distribuzione ROI,
+        conversione MOT->YOLO, creazione del file YAML e pulizia delle classi.
+        """
         print(f"\n[DataManager] {'=' * 50}")
         print("[DataManager] AVVIO: PREPARAZIONE DATASET & FORMATTING")
         print(f"[DataManager] {'=' * 50}")
@@ -65,6 +77,10 @@ class DataManager:
         print(f"[DataManager] {'=' * 50}\n")
 
     def rename_video_folders(self):
+        """
+        Standardizza i nomi delle cartelle dei video rimuovendo i prefissi (es. 'SNMOT-')
+        per facilitare l'indicizzazione e il matching con i file di configurazione.
+        """
         subsets = ['train', 'test']
         count = 0
 
@@ -95,6 +111,10 @@ class DataManager:
             print(f"[DataManager]       Nessuna cartella da rinominare trovata.")
 
     def _distribute_roi_json(self):
+        """
+        Copia i file di configurazione delle Region of Interest (ROI) dalla cartella centrale
+        a ogni singola sottocartella video per garantire l'autonomia di analisi di ogni clip.
+        """
         source_roi = os.path.join('./configs', 'roi.json')
         if not os.path.exists(source_roi) and 'roi' in self.cfg['paths']:
             source_roi = self.cfg['paths']['roi']
@@ -124,6 +144,10 @@ class DataManager:
         print(f"[DataManager]       ROI distribuito in {count} cartelle video.")
 
     def prepare_behavior_gt(self):
+        """
+        Genera file di Ground Truth specifici per l'analisi del comportamento, contando quanti
+        oggetti validi si trovano all'interno delle diverse ROI per ogni frame.
+        """
         roi_path = self.cfg['paths']['roi']
         if not os.path.exists(roi_path):
             print(f"[DataManager] [ERROR] File ROI non trovato in {roi_path}")
@@ -203,6 +227,10 @@ class DataManager:
                         f_out.flush()
 
     def _create_yolo_yaml(self):
+        """
+        Crea il file di configurazione 'dataset.yaml' richiesto da YOLO, definendo i percorsi
+        delle immagini di train/val/test e mappando i nomi delle classi agli ID numerici.
+        """
         yaml_path = os.path.join(self.yolo_dataset_path, 'dataset.yaml')
         abs_path = os.path.abspath(self.yolo_dataset_path)
 
@@ -229,6 +257,10 @@ class DataManager:
 
     @staticmethod
     def _unzip_and_delete(source_folder, output_folder):
+        """
+        Utility statica per estrarre archivi compressi ZIP e rimuovere il file originale
+        dopo l'estrazione per ottimizzare lo spazio su disco.
+        """
         if not os.path.exists(source_folder): return
         if not os.path.exists(output_folder): os.makedirs(output_folder, exist_ok=True)
 
@@ -249,6 +281,10 @@ class DataManager:
             print("[DataManager]       Nessun file .zip trovato, procedo.")
 
     def _convert_mot_to_yolo(self, source_dir, output_dir, sub_folder='train'):
+        """
+        Converte le annotazioni dal formato MOT (Multi-Object Tracking) al formato YOLO,
+        normalizzando le coordinate dei bounding box e gestendo i symlink delle immagini.
+        """
         images_out = os.path.join(output_dir, 'images', sub_folder)
         labels_out = os.path.join(output_dir, 'labels', sub_folder)
         os.makedirs(images_out, exist_ok=True)
@@ -339,6 +375,10 @@ class DataManager:
                         shutil.copy(os.path.abspath(src_img), os.path.abspath(dst_img))
 
     def remove_ball_from_all_gt(self):
+        """
+        Rimuove l'oggetto 'palla' dai file di Ground Truth originali, creando un backup
+        e filtrando le righe per concentrare l'analisi esclusivamente sugli attori umani.
+        """
         subsets = ['train', 'test']
         total_modified = 0
         total_skipped = 0

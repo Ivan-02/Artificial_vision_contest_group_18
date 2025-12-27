@@ -14,7 +14,16 @@ from .field_detector import FieldFilter
 
 
 class Tracker:
+    """
+    Classe principale che gestisce l'intero workflow di tracking degli oggetti nei video,
+    integrando il rilevamento YOLO, il filtraggio spaziale del campo e la gestione dei report.
+    """
+
     def __init__(self, config, conf_mode):
+        """
+        Inizializza la pipeline di tracking configurando il modello YOLO, il sistema di visualizzazione,
+        i filtri per il campo da gioco e i parametri di salvataggio dei risultati.
+        """
         self.cfg = config
         self.cfg_mode = conf_mode
 
@@ -51,7 +60,6 @@ class Tracker:
 
         self.reporter.update_json_section("configuration", self.cfg_mode)
 
-        # Parametri
         self.conf = self.cfg_mode['conf_threshold']
         self.iou = self.cfg_mode['iou_threshold']
         self.max_video = self.cfg_mode.get('max_video', None)
@@ -65,6 +73,10 @@ class Tracker:
             yaml.dump(self.cfg_mode['tracker_settings'], f, sort_keys=False)
 
     def _check_keys(self):
+        """
+        Esegue una validazione dei parametri di configurazione per garantire che tutte
+        le chiavi obbligatorie siano presenti nel dizionario di input.
+        """
         required_keys = {
             'test_name', 'conf_threshold', 'iou_threshold', 'display', 'display_width',
             'half', 'show', 'imgsz', 'stream', 'verbose', 'persist',
@@ -77,6 +89,10 @@ class Tracker:
             sys.exit(1)
 
     def get_video_list(self):
+        """
+        Analizza la directory sorgente e restituisce l'elenco dei video da elaborare,
+        applicando eventuali filtri (video specifici, campionamento casuale o limiti numerici).
+        """
         test_dir = os.path.join(self.cfg['paths']['raw_data'], self.cfg['paths']['split'])
         if not os.path.exists(test_dir):
             print(f"[Tracker] [ERROR] CRITICO: Cartella dati non trovata -> {test_dir}")
@@ -112,9 +128,11 @@ class Tracker:
         return all_video_folders
 
     def track_video_generator(self, video_path_folder):
-        video_path_img = os.path.join(self.cfg['paths']['raw_data'],
-                                      self.cfg['paths']['split'],
-                                      video_path_folder, 'img1')
+        """
+        Generatore che esegue il tracking YOLO sui frame di un video, restituendo iterativamente
+        l'ID del frame, l'immagine originale e l'elenco delle rilevazioni effettuate.
+        """
+        video_path_img = os.path.join(self.cfg['paths']['raw_data'],self.cfg['paths']['split'],video_path_folder, 'img1')
 
         if not os.path.exists(video_path_img):
             tqdm.write(f"[Tracker] [!] SKIP: Cartella immagini assente in {video_path_folder}")
@@ -167,6 +185,11 @@ class Tracker:
             yield frame_id, result.orig_img, detections
 
     def run(self):
+        """
+        Orchestra l'esecuzione del tracking su tutti i video selezionati, gestisce il filtraggio
+        delle coordinate, il salvataggio dei file di output e l'eventuale valutazione finale (HOTA).
+        """
+
         print(f"\n[Tracker] {'=' * 50}")
         print("[Tracker] AVVIO: ESECUZIONE SU DATASET")
         print(f"[Tracker] {'=' * 50}")

@@ -6,7 +6,16 @@ from ultralytics import YOLO
 import yaml
 
 class Validator:
+    """
+    Gestisce il processo di validazione e grid search per modelli YOLO,
+    permettendo di testare diverse soglie di confidenza e IoU per ottimizzare le performance.
+    """
+
     def __init__(self, config, conf_mode):
+        """
+        Inizializza il validatore caricando il modello YOLO, configurando i percorsi dei dati
+        e verificando l'integrità dei parametri forniti.
+        """
         self.cfg = config
         self.cfg_values = conf_mode
 
@@ -32,6 +41,10 @@ class Validator:
         print(f"[Validator] [INIT] Dataset YAML: {os.path.basename(self.dataset_yaml)}")
 
     def _check_keys(self):
+        """
+        Valida la presenza di tutte le chiavi necessarie nel dizionario di configurazione
+        prima di procedere con l'esecuzione.
+        """
         required_keys = {
             'verbose',
             'imgsz',
@@ -53,12 +66,20 @@ class Validator:
 
     @staticmethod
     def _calculate_deta(precision, recall):
+        """
+        Calcola la metrica DetA (Detection Accuracy) come combinazione armonica
+        di precisione e recall.
+        """
         if precision + recall == 0:
             return 0
         deta = (precision * recall) / (precision + recall - (precision * recall))
         return deta
 
     def run(self):
+        """
+        Esegue il loop di validazione (Grid Search) sui parametri IoU specificati,
+        salva i risultati in formato CSV e identifica la configurazione migliore.
+        """
         if self.cfg_values['verbose']:
             print(f"\n[Validator] {'=' * 50}")
             print(f"[Validator] AVVIO: GRID SEARCH SU MODELLO")

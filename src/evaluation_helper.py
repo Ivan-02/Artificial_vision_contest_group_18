@@ -9,8 +9,17 @@ import trackeval
 from typing import Dict, Tuple, List
 import numpy as np
 
+"""
+Modulo di utility per la valutazione delle performance: include funzioni per il calcolo del nMAE (comportamento), 
+la formattazione dei dati in standard MOTChallenge e l'integrazione con il framework TrackEval per le metriche HOTA.
+"""
+
 @contextmanager
 def suppress_stdout():
+    """
+    Gestore di contesto per silenziare temporaneamente l'output standard (stdout),
+    utile per evitare log ridondanti da librerie esterne.
+    """
     with open(os.devnull, "w") as devnull:
         old_stdout = sys.stdout
         sys.stdout = devnull
@@ -21,6 +30,10 @@ def suppress_stdout():
 
 
 def natural_key(path: str) -> int:
+    """
+    Genera una chiave numerica a partire dal nome del file per consentire
+    un ordinamento naturale (es. '2.jpg' prima di '10.jpg').
+    """
     name = os.path.basename(path)
     try:
         return int(name.split(".")[0])
@@ -29,6 +42,10 @@ def natural_key(path: str) -> int:
 
 
 def _read_behavior(path: str) -> Dict[Tuple[int, int], int]:
+    """
+    Legge un file di behavior e mappa le coppie (frame, id) al valore rilevato,
+    gestendo eventuali errori di parsing.
+    """
     out: Dict[Tuple[int, int], int] = {}
     import csv
     try:
@@ -46,6 +63,10 @@ def _read_behavior(path: str) -> Dict[Tuple[int, int], int]:
     return out
 
 def compute_nmae_from_behavior_files(dataset_root: str, predictions_root: str, group: str) -> dict:
+    """
+    Calcola l'errore medio assoluto (MAE) e lo normalizza (nMAE) confrontando
+    le predizioni di comportamento con la Ground Truth su tutto il dataset.
+    """
     abs_err_sum = 0.0
     n = 0
 
@@ -85,6 +106,10 @@ def compute_nmae_from_behavior_files(dataset_root: str, predictions_root: str, g
     return {"has_behavior": True, "MAE": mae, "nMAE": nmae}
 
 def ensure_10col_and_force_class1(src_txt: str, dst_txt: str) -> None:
+    """
+    Normalizza i file di tracking convertendoli nel formato standard a 10 colonne
+    e forzando l'ID di classe a 1 per la compatibilità con i benchmark.
+    """
     Path(dst_txt).parent.mkdir(parents=True, exist_ok=True)
     out_lines: List[str] = []
 
@@ -115,6 +140,10 @@ def ensure_10col_and_force_class1(src_txt: str, dst_txt: str) -> None:
 
 
 def write_seqinfo_ini(seq_dir: str, seq_name: str, fps: float, img_w: int, img_h: int, seq_len: int) -> None:
+    """
+    Genera il file di configurazione 'seqinfo.ini' necessario per definire
+    proprietà come FPS e risoluzione all'interno del framework TrackEval.
+    """
     content = "\n".join([
         "[Sequence]",
         f"name={seq_name}",
@@ -131,6 +160,10 @@ def write_seqinfo_ini(seq_dir: str, seq_name: str, fps: float, img_w: int, img_h
 
 
 def list_video_ids(dataset_root: str) -> List[str]:
+    """
+    Scansiona la directory del dataset per identificare e restituire una lista
+    ordinata di ID video validi (cartelle numeriche).
+    """
     vids = []
     if not os.path.exists(dataset_root):
         return []
@@ -151,6 +184,10 @@ def build_trackeval_structure(
         benchmark: str = "SNMOT",
         tracker_name: str = "test",
 ) -> Tuple[str, str, str]:
+    """
+    Costruisce una gerarchia di cartelle temporanea compatibile con MOTChallenge,
+    copiando e formattando GT e predizioni per l'analisi automatizzata.
+    """
     tmp_root = os.path.abspath(tmp_root)
     if os.path.exists(tmp_root):
         shutil.rmtree(tmp_root)
@@ -224,6 +261,10 @@ def compute_metrics_with_details(
         benchmark: str = "SNMOT",
         tracker_name: str = "test",
 ) -> List[Dict]:
+    """
+    Interfaccia il motore TrackEval per calcolare metriche avanzate (HOTA, MOTA, DetA, AssA)
+    e restituisce un dizionario dettagliato con i risultati per ogni video.
+    """
     eval_config = trackeval.Evaluator.get_default_eval_config()
     eval_config["DISPLAY_LESS_PROGRESS"] = True
     eval_config["PRINT_RESULTS"] = False

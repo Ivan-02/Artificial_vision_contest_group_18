@@ -3,7 +3,16 @@ import numpy as np
 
 
 class FieldFilter:
+    """
+    Gestisce la segmentazione del campo da gioco e il filtraggio delle rilevazioni,
+    utilizzando maschere HSV, operazioni morfologiche e analisi geometrica dei contorni.
+    """
+
     def __init__(self, settings=None):
+        """
+        Inizializza i parametri di filtraggio, definendo i range di colore HSV,
+        i kernel per la morfologia e le soglie per la validazione delle coordinate.
+        """
         if settings is None:
             settings = {}
 
@@ -50,6 +59,10 @@ class FieldFilter:
         self.step3_filled = None
 
     def _get_field_contour(self, frame):
+        """
+        Elabora il frame per estrarre il contorno del campo tramite soglie di colore,
+        accumulazione pesata per la stabilità temporale e operazioni di chiusura/erosione.
+        """
         blurred = cv2.GaussianBlur(frame, (5, 5), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         curr_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
@@ -99,6 +112,10 @@ class FieldFilter:
         return approx_contour
 
     def _check_pixel_under_feet(self, x, y, frame_w, frame_h):
+        """
+        Esegue un controllo puntuale sulla maschera binaria per verificare se l'area
+        sottostante a una coordinata specifica appartiene effettivamente al campo.
+        """
         if self.current_binary_mask is None: return True
         r = self.pixel_check_radius
         x1, x2 = max(0, x - r), min(frame_w, x + r)
@@ -108,6 +125,10 @@ class FieldFilter:
         return (cv2.countNonZero(roi) / roi.size) > self.pixel_check_ratio
 
     def filter_detections(self, frame, detections):
+        """
+        Analizza ogni rilevazione confrontando la posizione dei piedi con il contorno
+        del campo e la presenza di colore verde, filtrando gli oggetti esterni al gioco.
+        """
         field_contour = self._get_field_contour(frame)
 
         if field_contour is None:
@@ -161,6 +182,10 @@ class FieldFilter:
         return filtered_detections, field_contour
 
     def draw_debug(self, frame, contour):
+        """
+        Genera una visualizzazione grafica per il debug, mostrando il perimetro del campo
+        o un mosaico dei passaggi intermedi della segmentazione (HSV, Morph, Filled).
+        """
         if not self.debug:
             return frame
 

@@ -7,15 +7,28 @@ from .evaluation_helper import compute_nmae_from_behavior_files, build_trackeval
 
 
 class Evaluator:
+    """
+    Classe dedicata alla valutazione delle performance del modello, incaricata di calcolare
+    le metriche di comportamento (nMAE) e di tracking (HOTA) confrontando le predizioni con la Ground Truth.
+    """
+
     def __init__(self, config):
+        """
+        Inizializza l'evaluator configurando i percorsi di input/output, recuperando i dati
+        del team e preparando le directory temporanee per i wrapper di valutazione.
+        """
         self.cfg = config
         self.base_output_dir = self.cfg['paths']['output_submission']
         self.subdirs = self.cfg['paths']['output_subdirs']
         self.gt_base_dir = os.path.join(self.cfg['paths']['raw_data'], self.cfg['paths']['split'])
-        self.team_name = self.cfg['names']['team']  # Es. '18' o 18
+        self.team_name = self.cfg['names']['team']
         self.trackeval_tmp_root = os.path.join(self.base_output_dir, "_tmp_trackeval_wrapper")
 
     def run_behavior(self):
+        """
+        Esegue l'analisi del comportamento calcolando l'errore medio assoluto (MAE) e il MAE normalizzato (nMAE)
+        sui file di predizione, aggiornando i report JSON e CSV finali.
+        """
         print(f"\n[Evaluator] {'=' * 50}")
         print("[Evaluator] AVVIO: BEHAVIOR ANALYSIS (nMAE)")
         print(f"[Evaluator] {'=' * 50}")
@@ -68,6 +81,10 @@ class Evaluator:
                 print(f"[Evaluator] [ERROR] Errore critico Behavior Analysis: {e}")
 
     def run_hota(self):
+        """
+        Gestisce la valutazione del tracking tramite la metrica HOTA, orchestrando la creazione
+        della struttura TrackEval, il calcolo delle metriche di dettaglio e il salvataggio dei punteggi globali.
+        """
         print(f"\n[Evaluator] {'=' * 50}")
         print("[Evaluator] AVVIO: TRACKING ANALYSIS (HOTA)")
         print(f"[Evaluator] {'=' * 50}")
