@@ -37,23 +37,14 @@ class FieldFilter:
         self.min_area_ratio = settings.get('min_area_ratio', 0.01)
         self.poly_epsilon = settings.get('poly_epsilon', 0.01)
         self.show_mosaic = settings.get('debug_mosaic', False)
-
-        self.pixel_check_radius = settings.get('pixel_check_radius', 5)
-        self.pixel_check_ratio = settings.get('pixel_check_ratio', 0.1)
         self.bottom_zone_ratio = settings.get('bottom_zone_ratio', 0.80)
-        self.strong_conf_thresh = settings.get('strong_conf_thresh', 0.75)
-        self.safe_zone_dist = settings.get('safe_zone_dist', 30)
 
         self.clipping_margin = settings.get('clipping_margin', 5)
-        self.pixel_check_offset = settings.get('pixel_check_offset', 10)
-
         self.thresh_clipping = settings.get('thresh_clipping', -5.0)
         self.thresh_bottom = settings.get('thresh_bottom', 5.0)
         self.thresh_std = settings.get('thresh_standard', -2.0)
 
         self.prev_mask = None
-        self.current_binary_mask = None
-
         self.step1_hsv = None
         self.step2_morph = None
         self.step3_filled = None
@@ -86,7 +77,6 @@ class FieldFilter:
         contours, _ = cv2.findContours(processed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if not contours:
-            self.current_binary_mask = processed_mask
             if self.debug: self.step3_filled = processed_mask.copy()
             return None
 
@@ -94,7 +84,6 @@ class FieldFilter:
         significant_contours = [c for c in contours if cv2.contourArea(c) > min_area]
 
         if not significant_contours:
-            self.current_binary_mask = processed_mask
             if self.debug: self.step3_filled = processed_mask.copy()
             return None
 
@@ -107,28 +96,15 @@ class FieldFilter:
         cv2.drawContours(filled_mask, [hull], -1, 255, thickness=cv2.FILLED)
 
         if self.debug: self.step3_filled = filled_mask.copy()
-        self.current_binary_mask = filled_mask
 
         return approx_contour
-
-    def _check_pixel_under_feet(self, x, y, frame_w, frame_h):
-        """
-        Esegue un controllo puntuale sulla maschera binaria per verificare se l'area
-        sottostante a una coordinata specifica appartiene effettivamente al campo.
-        """
-        if self.current_binary_mask is None: return True
-        r = self.pixel_check_radius
-        x1, x2 = max(0, x - r), min(frame_w, x + r)
-        y1, y2 = max(0, y - r), min(frame_h, y + r)
-        roi = self.current_binary_mask[y1:y2, x1:x2]
-        if roi.size == 0: return False
-        return (cv2.countNonZero(roi) / roi.size) > self.pixel_check_ratio
 
     def filter_detections(self, frame, detections):
         """
         Analizza ogni rilevazione confrontando la posizione dei piedi con il contorno
-        del campo e la presenza di colore verde, filtrando gli oggetti esterni al gioco.
+        del campo (test geometrico), filtrando gli oggetti esterni al gioco.
         """
+
         field_contour = self._get_field_contour(frame)
 
         if field_contour is None:
@@ -157,16 +133,7 @@ class FieldFilter:
 
             is_geometrically_inside = dist >= threshold
 
-            if is_clipping_bottom:
-                safe_y = max(0, feet_y - self.pixel_check_offset)
-                is_ground_green = self._check_pixel_under_feet(feet_x, safe_y, img_w, img_h)
-            else:
-                is_ground_green = self._check_pixel_under_feet(feet_x, feet_y, img_w, img_h)
-
-            strong_detection = det['conf'] > self.strong_conf_thresh
-            condition_safe_zone = (dist > self.safe_zone_dist)
-
-            if is_geometrically_inside and (is_ground_green or condition_safe_zone or (is_clipping_bottom and strong_detection)):
+            if is_geometrically_inside:
                 filtered_detections.append(det)
                 final_decision = True
             else:

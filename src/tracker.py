@@ -50,13 +50,14 @@ class Tracker:
             print(f"[Tracker] [INIT] Visualizzazione: DISATTIVA (Headless Mode)")
             self.vis = None
 
-        if FieldFilter:
-            field_settings = self.cfg_mode.get('field_det_settings', {})
+        field_settings = self.cfg_mode.get('field_det_settings')
+
+        if field_settings:
             self.field_filter = FieldFilter(settings=field_settings)
             print(f"[Tracker] [INIT] FieldFilter: Caricato")
         else:
             self.field_filter = None
-            print(f"[Tracker] [INIT] FieldFilter: Non disponibile")
+            print(f"[Tracker] [INIT] FieldFilter: Non disponibile (Configurazione mancante)")
 
         self.reporter.update_json_section("configuration", self.cfg_mode)
 

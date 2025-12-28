@@ -44,44 +44,24 @@ class BehaviorAnalyzer:
             print(f"[BehaviorAnalyzer] [INIT] Visualizzazione: DISATTIVA")
             self.vis = None
 
-        if FieldFilter:
-            field_settings = self.conf_mode.get('field_det_settings', {})
+        field_settings = self.conf_mode.get('field_det_settings')
+
+        if field_settings:
             self.field_filter = FieldFilter(settings=field_settings)
             print(f"[BehaviorAnalyzer] [INIT] FieldFilter: Caricato")
         else:
             self.field_filter = None
-            print(f"[BehaviorAnalyzer] [INIT] FieldFilter: Non disponibile")
+            print(f"[BehaviorAnalyzer] [INIT] FieldFilter: Non disponibile (Configurazione mancante)")
 
         self.run_eval = conf_mode.get('eval', False)
 
         self.colors = {
-            'default': (0, 0, 255),  # Rosso
-            'roi1': (0, 255, 255),  # Giallo
-            'roi2': (255, 0, 255)  # Magenta
+            'default': (0, 0, 255),
+            'roi1': (0, 255, 255),
+            'roi2': (255, 0, 255)
         }
 
         self.reporter.update_json_section("configuration", self.conf_mode)
-
-    def _load_rois(self, video_folder):
-        """
-        Carica i dati delle ROI da file JSON esterno; in caso di errore o file mancante,
-        restituisce un set di coordinate di fallback predefinito.
-        """
-
-        json_path = self.cfg['paths']['roi']
-        fallback = {
-            "roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
-            "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}
-        }
-        if not os.path.exists(json_path):
-            return fallback
-        try:
-            with open(json_path, 'r') as f:
-                data = json.load(f)
-            return data
-        except Exception as e:
-            tqdm.write(f"[BehaviorAnalyzer] [WARN] Errore caricamento ROI: {e}. Uso fallback.")
-            return fallback
 
     def run(self):
         """
@@ -118,8 +98,10 @@ class BehaviorAnalyzer:
                 continue
 
             window_name = f"Behavior - {video_name}"
-            rois_data = self._load_rois(video_name)
+            video_path = os.path.join(self.cfg["paths"]["raw_data"], self.cfg["paths"]["split"], video_name)
+            roi_path = self.cfg["paths"]["roi"]
 
+            rois_data = self.reporter.load_rois(video_path, roi_path)
             start_time = time.time()
             frame_lines = []
             current_video_interrupted = False

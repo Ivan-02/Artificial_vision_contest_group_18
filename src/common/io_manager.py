@@ -1,9 +1,12 @@
 import os
 import json
+from tqdm import tqdm
+
 
 class ReportManager:
     """
-    Gestisce la creazione e l'aggiornamento dei file di report (TXT e JSON)
+    Gestisce la creazione e l'aggiornamento e il caricamento dei file di report e
+    di configurazione (TXT e JSON)
     e assicura la gestione corretta della directory di output.
     """
 
@@ -15,6 +18,41 @@ class ReportManager:
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
         self.json_path = os.path.join(self.output_dir, "execution_report.json")
+
+    def load_rois(self, video_path, global_roi_path=None):
+        """
+        Carica le ROI seguendo una logica a priorità:
+        1. Cerca 'roi.json' specifico all'interno della cartella del video.
+        2. Se non presente, cerca la definizione nel file ROI globale (da config).
+        3. Se fallisce anche il globale, usa un fallback hardcoded.
+        """
+
+        fallback = {
+            "roi1": {"x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4},
+            "roi2": {"x": 0.5, "y": 0.7, "width": 0.5, "height": 0.3}
+        }
+
+        local_roi_path = os.path.join(video_path, 'roi.json')
+
+        if os.path.exists(local_roi_path):
+            try:
+                with open(local_roi_path, 'r') as f:
+                    data = json.load(f)
+                return data
+            except Exception as e:
+                tqdm.write(f"[BehaviorAnalyzer] [WARN] File ROI locale trovato ma corrotto per {video_path}: {e}")
+
+
+        if global_roi_path and os.path.exists(global_roi_path):
+            try:
+                with open(global_roi_path, 'r') as f:
+                    data = json.load(f)
+                return data
+            except Exception as e:
+                tqdm.write(f"[BehaviorAnalyzer] [WARN] Errore lettura file ROI globale: {e}")
+
+        tqdm.write(f"[BehaviorAnalyzer] [WARN] Nessuna ROI trovata per {video_path}. Uso Fallback.")
+        return fallback
 
     def save_txt_results(self, filename, lines, append=False):
         """
