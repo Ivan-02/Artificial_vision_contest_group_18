@@ -1,4 +1,4 @@
-# Artificial Vision Project - Group 18
+# Artificial Vision Project - Gruppo 18
 ## Soccer Player Tracking and Behavior Analysis
 
 Questo repository contiene la soluzione del Gruppo 18 per la challenge di Artificial Vision. Il sistema esegue il tracciamento dei giocatori e il conteggio nelle ROI specificate, utilizzando **YOLO11** per la detection e BoT-SORT per il tracking, **integrando un filtraggio avanzato basato sul colore del campo (HSV)**.
