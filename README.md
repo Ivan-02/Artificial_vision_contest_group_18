@@ -117,6 +117,23 @@ Cosa fa lo script:
 * `q` o `Esc`: Chiudi e termina.
 
 ---
+### 📷 Esempi di Visualizzazione
+Di seguito sono riportati esempi dell'output visivo generato dal sistema, che illustrano sia il tracciamento che l'analisi nelle aree di interesse (ROI).
+
+**1. Output Tracking & Behavior Analysis**
+Questa è la vista principale offerta dal **Simulatore** (o attivando `display: True` in `tracking.yaml`).
+Oltre ai **Bounding Box** dei giocatori (con ID e confidenza), sono visibili le **ROI (Regions of Interest)** configurate (rettangoli giallo e viola): il sistema conta in tempo reale quanti giocatori si trovano all'interno di ciascuna area per l'analisi comportamentale.
+![Output Tracking con ROI](img/foto 1.png)
+
+**2. Debug Filtro Campo (Modalità Mosaic)**
+Attivando l'opzione `debug_mosaic: True` nel file di configurazione `tracking.yaml`, è possibile ispezionare la pipeline di filtraggio del campo di gioco.
+* **Top-Left:** Frame originale con visualizzazione delle ROI e del tracking.
+* **Top-Right:** Maschera HSV grezza (Raw).
+* **Bottom-Left:** Risultato dopo le operazioni morfologiche (pulizia del rumore).
+* **Bottom-Right:** Maschera finale (Hole Filling), utilizzata per escludere le detection sugli spalti.
+![Field Filter Debug Mosaic](img/foto 2.png)
+
+---
 ### 🛠️ Modalità Alternative di Esecuzione
 Oltre alla modalità contest, è possibile eseguire i moduli singolarmente per debug o test specifici.
 
