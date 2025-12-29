@@ -172,7 +172,7 @@ $$ PTBS = HOTA_{0.5} + nMAE $$
 
 Dove:
 
-* $ HOTA_{0.5} $: Valore ottenuto dal passo 2 (range 0-100 o 0-1, assicurarsi di usare la scala 0-1 per la somma se nMAE è in 0-1).
+* $HOTA_{0.5}$: Valore ottenuto dal passo 2 (range 0-100 o 0-1, assicurarsi di usare la scala 0-1 per la somma se nMAE è in 0-1).
 
 * nMAE: Valore ottenuto dal passo 3 (range 0-1).
 
@@ -180,7 +180,7 @@ Dove:
 
 ---
 ### ⚙️ Dettagli File di Configurazione
-#### 1. File `configs/config.yaml`.\
+#### 1. File `configs/config.yaml`.
 Questo file gestisce i percorsi globali e le impostazioni generali del progetto.
 
 | Parametro | Descrizione |
