@@ -123,7 +123,7 @@ Di seguito sono riportati esempi dell'output visivo generato dal sistema, che il
 **1. Output Tracking & Behavior Analysis**
 Questa è la vista principale offerta dal **Simulatore** (o attivando `display: True` in `tracking.yaml`).
 Oltre ai **Bounding Box** dei giocatori (con ID e confidenza), sono visibili le **ROI (Regions of Interest)** configurate (rettangoli giallo e viola): il sistema conta in tempo reale quanti giocatori si trovano all'interno di ciascuna area per l'analisi comportamentale.
-![Output Tracking con ROI](img/foto 1.png)
+![Output Tracking con ROI](img/foto1.png)
 
 **2. Debug Filtro Campo (Modalità Mosaic)**
 Attivando l'opzione `debug_mosaic: True` nel file di configurazione `tracking.yaml`, è possibile ispezionare la pipeline di filtraggio del campo di gioco.
@@ -131,7 +131,7 @@ Attivando l'opzione `debug_mosaic: True` nel file di configurazione `tracking.ya
 * **Top-Right:** Maschera HSV grezza (Raw).
 * **Bottom-Left:** Risultato dopo le operazioni morfologiche (pulizia del rumore).
 * **Bottom-Right:** Maschera finale (Hole Filling), utilizzata per escludere le detection sugli spalti.
-![Field Filter Debug Mosaic](img/foto 2.png)
+![Field Filter Debug Mosaic](img/foto2.png)
 
 ---
 ### 🛠️ Modalità Alternative di Esecuzione
